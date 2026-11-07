@@ -1,0 +1,35 @@
+{
+  "file": "Gold_Deposits.png",
+  "source": "Original artwork generated for Realmfront with the built-in image_gen tool",
+  "generated": "2026-11-07",
+  "prompt": "Gold_Deposits.prompt.txt",
+  "sha256": "5b714085f8be24f8025754d729c1446aa782cecd7399bf42089dc1d15211f87f",
+  "width": 1254,
+  "height": 1254,
+  "frames": [
+    {
+      "x": 110,
+      "y": 208,
+      "w": 412,
+      "h": 291
+    },
+    {
+      "x": 719,
+      "y": 156,
+      "w": 446,
+      "h": 342
+    },
+    {
+      "x": 154,
+      "y": 743,
+      "w": 326,
+      "h": 386
+    },
+    {
+      "x": 719,
+      "y": 845,
+      "w": 445,
+      "h": 268
+    }
+  ]
+}

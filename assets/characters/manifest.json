@@ -1,0 +1,93 @@
+{
+  "source": "https://pixelfrog-assets.itch.io/tiny-swords",
+  "download": "TS_old version_CC0 Licensed",
+  "archive": "Tiny Swords.zip",
+  "archiveSha256": "e4d79bd4514bad153cfa1cc8f4c8d8bf10ed39bf69bd98b83bdc46c03d14bb9c",
+  "downloaded": "2026-11-07",
+  "files": [
+    {
+      "file": "Pawn_Blue.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Pawn/Blue/Pawn_Blue.png",
+      "sha256": "38c47fc4766fa1fad73c188e5c6a1f2d2257aebc9dfdd5b37f1c8dad913e8cfe",
+      "width": 1152,
+      "height": 1152
+    },
+    {
+      "file": "Pawn_Red.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Pawn/Red/Pawn_Red.png",
+      "sha256": "0d207ad590425917b71d3dc538b88d6765e76c90aa24ed5ff80c0ad842738705",
+      "width": 1152,
+      "height": 1152
+    },
+    {
+      "file": "Pawn_Purple.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Pawn/Purple/Pawn_Purple.png",
+      "sha256": "c88b5db861d94d342b0420b8cefacb4865e49ae104af4fb934f46556d9274c12",
+      "width": 1152,
+      "height": 1152
+    },
+    {
+      "file": "Pawn_Yellow.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Pawn/Yellow/Pawn_Yellow.png",
+      "sha256": "22cbf2126c68f61a3a359d0d19d45f8fdaa24700d2b9492c9b17f03977405d1f",
+      "width": 1152,
+      "height": 1152
+    },
+    {
+      "file": "Warrior_Blue.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Warrior/Blue/Warrior_Blue.png",
+      "sha256": "593a40da14b136374d55044fd3ba3ac11e621d645be9c75a2a6032741ab24c80",
+      "width": 1152,
+      "height": 1536
+    },
+    {
+      "file": "Warrior_Red.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Warrior/Red/Warrior_Red.png",
+      "sha256": "a1f67ed61134a20df6211e1e9fff1c33e9964512fddf4ccdb3c1673752b9bc14",
+      "width": 1152,
+      "height": 1536
+    },
+    {
+      "file": "Warrior_Purple.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Warrior/Purple/Warrior_Purple.png",
+      "sha256": "779f5fa986fe15736d5b1deec5958a07340644a163ab208714f5a43792fd662d",
+      "width": 1152,
+      "height": 1536
+    },
+    {
+      "file": "Warrior_Yellow.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Warrior/Yellow/Warrior_Yellow.png",
+      "sha256": "85902914cb921cc7c6eb728eb9c1d34a710ce8e4a66ae8d537e5fcc64ca54e64",
+      "width": 1152,
+      "height": 1536
+    },
+    {
+      "file": "Archer_Blue.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Archer/Blue/Archer_Blue.png",
+      "sha256": "0a2e1efff6d653d32777b99ca01f9018fbf27080f2aff645f0fafde175e8b7ec",
+      "width": 1536,
+      "height": 1344
+    },
+    {
+      "file": "Archer_Red.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Archer/Red/Archer_Red.png",
+      "sha256": "daa79d0f957dea7355b6ff5c6210e833779bd7ef40c32c1943f03b9aaa12a26d",
+      "width": 1536,
+      "height": 1344
+    },
+    {
+      "file": "Archer_Purple.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Archer/Purple/Archer_Purlple.png",
+      "sha256": "f956a4c6d834b21a74e04a9f0a8d0e432f6e64441836f97cfca498f10854c3f7",
+      "width": 1536,
+      "height": 1344
+    },
+    {
+      "file": "Archer_Yellow.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Troops/Archer/Yellow/Archer_Yellow.png",
+      "sha256": "104159e53f3ee28903b3b0b91ea31229f101fbe6842a28a0fdd6eaa2e5afcc4f",
+      "width": 1536,
+      "height": 1344
+    }
+  ]
+}

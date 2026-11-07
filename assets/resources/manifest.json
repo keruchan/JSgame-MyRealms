@@ -1,0 +1,104 @@
+{
+  "source": "https://pixelfrog-assets.itch.io/tiny-swords",
+  "download": "TS_old version_CC0 Licensed",
+  "license": "CC0-1.0",
+  "archiveSha256": "e4d79bd4514bad153cfa1cc8f4c8d8bf10ed39bf69bd98b83bdc46c03d14bb9c",
+  "files": [
+    {
+      "file": "Tree.png",
+      "archivePath": "Tiny Swords (Update 010)/Resources/Trees/Tree.png",
+      "width": 768,
+      "height": 576,
+      "sha256": "63a1ae03991621528eab44d0840a75a923583a7bbb999311de27799ab21b4d3e",
+      "frames": [
+        {
+          "x": 43,
+          "y": 4,
+          "w": 111,
+          "h": 174
+        },
+        {
+          "x": 236,
+          "y": 4,
+          "w": 110,
+          "h": 174
+        },
+        {
+          "x": 427,
+          "y": 4,
+          "w": 111,
+          "h": 174
+        },
+        {
+          "x": 618,
+          "y": 4,
+          "w": 111,
+          "h": 174
+        },
+        {
+          "x": 39,
+          "y": 197,
+          "w": 106,
+          "h": 173
+        },
+        {
+          "x": 235,
+          "y": 199,
+          "w": 109,
+          "h": 171
+        },
+        {
+          "x": 79,
+          "y": 530,
+          "w": 36,
+          "h": 30
+        }
+      ]
+    },
+    {
+      "file": "Rock_Small.png",
+      "archivePath": "Tiny Swords (Update 010)/Deco/05.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "f51cf8d4647febc196a4b5e7afc80badaf50c76bf6309e548e11ffb1898ecb79",
+      "frames": [
+        {
+          "x": 18,
+          "y": 18,
+          "w": 29,
+          "h": 22
+        }
+      ]
+    },
+    {
+      "file": "Rock_Medium.png",
+      "archivePath": "Tiny Swords (Update 010)/Deco/06.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "edc4335ad52060a562b21fef868c64576d33b96a6a97ac5ba1448b6fb0a939c1",
+      "frames": [
+        {
+          "x": 12,
+          "y": 15,
+          "w": 44,
+          "h": 34
+        }
+      ]
+    },
+    {
+      "file": "Rock_Large.png",
+      "archivePath": "Tiny Swords (Update 010)/Deco/07.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "fae1719e2b2de9bd708598cdd2a0d0a5ca09aa88630dc6b52a80957f6a465d31",
+      "frames": [
+        {
+          "x": 16,
+          "y": 21,
+          "w": 31,
+          "h": 22
+        }
+      ]
+    }
+  ]
+}

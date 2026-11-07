@@ -1,0 +1,278 @@
+{
+  "source": "https://pixelfrog-assets.itch.io/tiny-swords",
+  "download": "TS_old version_CC0 Licensed",
+  "license": "CC0-1.0",
+  "archiveSha256": "e4d79bd4514bad153cfa1cc8f4c8d8bf10ed39bf69bd98b83bdc46c03d14bb9c",
+  "files": [
+    {
+      "file": "GoldMine_Active.png",
+      "archivePath": "Tiny Swords (Update 010)/Resources/Gold Mine/GoldMine_Active.png",
+      "width": 192,
+      "height": 128,
+      "sha256": "c5205d8181d488adce612f8cf5b1546d4bd793d0ab1dd2956aa86d22c861d37f",
+      "crop": {
+        "x": 12,
+        "y": 5,
+        "w": 169,
+        "h": 121
+      },
+      "frames": 1,
+      "frameWidth": 192
+    },
+    {
+      "file": "Wood_Tower_Blue.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Blue.png",
+      "width": 1024,
+      "height": 192,
+      "sha256": "c22c288b5bb4f43eeb3054389642dda0d5a7c7bde0f79f15b0ea94282b3818a8",
+      "crop": {
+        "x": 63,
+        "y": 16,
+        "w": 130,
+        "h": 155
+      },
+      "frames": 4,
+      "frameWidth": 256
+    },
+    {
+      "file": "Wood_Tower_Red.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Red.png",
+      "width": 1024,
+      "height": 192,
+      "sha256": "4e422cfd3a0975ef16763839810ff5c14c38d10aedf84e0a035e7a7e139e59cc",
+      "crop": {
+        "x": 63,
+        "y": 16,
+        "w": 130,
+        "h": 155
+      },
+      "frames": 4,
+      "frameWidth": 256
+    },
+    {
+      "file": "Wood_Tower_Purple.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Purple.png",
+      "width": 1024,
+      "height": 192,
+      "sha256": "6100ea7a48c46f232db8ae988177832e4d565d08c8b254fd98b6055f80a2ea4a",
+      "crop": {
+        "x": 63,
+        "y": 16,
+        "w": 130,
+        "h": 155
+      },
+      "frames": 4,
+      "frameWidth": 256
+    },
+    {
+      "file": "Wood_Tower_Yellow.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Yellow.png",
+      "width": 1024,
+      "height": 192,
+      "sha256": "6d502fd489fa3c98148fc20a2e80269ae764e6c8a3a32015a7f14acdf0c07c16",
+      "crop": {
+        "x": 63,
+        "y": 16,
+        "w": 130,
+        "h": 155
+      },
+      "frames": 4,
+      "frameWidth": 256
+    },
+    {
+      "file": "Goblin_House.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Goblins/Buildings/Wood_House/Goblin_House.png",
+      "width": 128,
+      "height": 192,
+      "sha256": "5e25c872df37f63e4432230e9c5d762b4de2f34956799d1127cce1963f60e1a9",
+      "crop": {
+        "x": 7,
+        "y": 26,
+        "w": 113,
+        "h": 145
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "Tower_Yellow.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Tower/Tower_Yellow.png",
+      "width": 128,
+      "height": 256,
+      "sha256": "5b216a1cb209482bbcfd8793669f283621147ae96e6ff45532629ffc27b25fff",
+      "crop": {
+        "x": 7,
+        "y": 52,
+        "w": 114,
+        "h": 183
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "Tower_Red.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Tower/Tower_Red.png",
+      "width": 128,
+      "height": 256,
+      "sha256": "bec8cffab0b56b42345c754132b9ab911ae02b9f59d5413b91a1cdf41296083a",
+      "crop": {
+        "x": 7,
+        "y": 52,
+        "w": 114,
+        "h": 183
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "Tower_Purple.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Tower/Tower_Purple.png",
+      "width": 128,
+      "height": 256,
+      "sha256": "e90a2c082dfa5300d977513d89f6200196e722b07233d01af401aa0e69ceae3b",
+      "crop": {
+        "x": 7,
+        "y": 52,
+        "w": 114,
+        "h": 183
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "Tower_Blue.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Tower/Tower_Blue.png",
+      "width": 128,
+      "height": 256,
+      "sha256": "2d39450c366fc1ebc0e5a290a860dcf21ebd7d4a22d16eb5cca23e6d4de94ca9",
+      "crop": {
+        "x": 7,
+        "y": 52,
+        "w": 114,
+        "h": 183
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "House_Blue.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/House/House_Blue.png",
+      "width": 128,
+      "height": 192,
+      "sha256": "9020e35116ffde6d22a8c854d7117d94e99e19bd582c3c3855ece449d7d2af6d",
+      "crop": {
+        "x": 10,
+        "y": 24,
+        "w": 108,
+        "h": 148
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "House_Purple.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/House/House_Purple.png",
+      "width": 128,
+      "height": 192,
+      "sha256": "73fa8a851020814151b6d037cb0673adfcc0b1a515af74c78f79a8bd8e3ecb64",
+      "crop": {
+        "x": 10,
+        "y": 24,
+        "w": 108,
+        "h": 148
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "House_Red.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/House/House_Red.png",
+      "width": 128,
+      "height": 192,
+      "sha256": "27f027830c1b5499d99075e87c1ea5f5c26bf49ecfd6ada758ceb5da2d7b058e",
+      "crop": {
+        "x": 10,
+        "y": 24,
+        "w": 108,
+        "h": 148
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "House_Yellow.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/House/House_Yellow.png",
+      "width": 128,
+      "height": 192,
+      "sha256": "2aa6fd3259755fdc2cb2cf856920dab098aa6d8493e9277b11685f4689aec4b8",
+      "crop": {
+        "x": 10,
+        "y": 24,
+        "w": 108,
+        "h": 148
+      },
+      "frames": 1,
+      "frameWidth": 128
+    },
+    {
+      "file": "Castle_Yellow.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Castle/Castle_Yellow.png",
+      "width": 320,
+      "height": 256,
+      "sha256": "f9bdf2a7a396ac3ff55241302405ed3c67f5ffbf2ef542e770dfb9e86f5113d6",
+      "crop": {
+        "x": 12,
+        "y": 45,
+        "w": 296,
+        "h": 205
+      },
+      "frames": 1,
+      "frameWidth": 320
+    },
+    {
+      "file": "Castle_Blue.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Castle/Castle_Blue.png",
+      "width": 320,
+      "height": 256,
+      "sha256": "616cfeec6287ede0b368a14332afc9ac34462dee5bb3f5a8f7595464c8b2ca53",
+      "crop": {
+        "x": 12,
+        "y": 45,
+        "w": 296,
+        "h": 205
+      },
+      "frames": 1,
+      "frameWidth": 320
+    },
+    {
+      "file": "Castle_Purple.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Castle/Castle_Purple.png",
+      "width": 320,
+      "height": 256,
+      "sha256": "254d88e095d1173ce18c01a6aed304101013adbd49d7276a9234114f6759389c",
+      "crop": {
+        "x": 12,
+        "y": 45,
+        "w": 296,
+        "h": 205
+      },
+      "frames": 1,
+      "frameWidth": 320
+    },
+    {
+      "file": "Castle_Red.png",
+      "archivePath": "Tiny Swords (Update 010)/Factions/Knights/Buildings/Castle/Castle_Red.png",
+      "width": 320,
+      "height": 256,
+      "sha256": "b64221f532aa3f6ec1074a5e0f36e9c3337a370f62ce366d6872535d7940b771",
+      "crop": {
+        "x": 12,
+        "y": 45,
+        "w": 296,
+        "h": 205
+      },
+      "frames": 1,
+      "frameWidth": 320
+    }
+  ]
+}

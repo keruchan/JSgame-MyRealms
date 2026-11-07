@@ -1,0 +1,37 @@
+{
+  "source": "https://pixelfrog-assets.itch.io/tiny-swords",
+  "download": "TS_old version_CC0 Licensed",
+  "license": "CC0-1.0",
+  "archiveSha256": "e4d79bd4514bad153cfa1cc8f4c8d8bf10ed39bf69bd98b83bdc46c03d14bb9c",
+  "tileSize": 64,
+  "files": [
+    {
+      "file": "Tilemap_Elevation.png",
+      "archivePath": "Tiny Swords (Update 010)/Terrain/Ground/Tilemap_Elevation.png",
+      "width": 256,
+      "height": 512,
+      "sha256": "dab562d922d81e4de500dc9e2cb480e35825e6202728b2a0825714b8885daee1"
+    },
+    {
+      "file": "Tilemap_Flat.png",
+      "archivePath": "Tiny Swords (Update 010)/Terrain/Ground/Tilemap_Flat.png",
+      "width": 640,
+      "height": 256,
+      "sha256": "683b4ebc6dff10d2bf6e2bd34c24d732defdc65abcb0f5b9f509655aff8bec56"
+    },
+    {
+      "file": "08.png",
+      "archivePath": "Tiny Swords (Update 010)/Deco/08.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "f94b5fa5aac1b62b58d9389c5524bebd0d99a4193749e41a505642bde965a6a8"
+    },
+    {
+      "file": "09.png",
+      "archivePath": "Tiny Swords (Update 010)/Deco/09.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "fa07501a73b22ae6d96297dfc5d8dad81791afe8751b8a40fb6ced4dfe45c3d5"
+    }
+  ]
+}
