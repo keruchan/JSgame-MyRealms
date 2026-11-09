@@ -54,6 +54,8 @@ JavaScript sections are labeled with comments. The script retains its private fu
 
 ## Controls
 
+Help opens with mechanics; Controls is the last section. Phone/tablet and desktop controls have separate expandable groups, with your device shown first, followed by shared multi-selection gestures. Exact upgrade bonuses and prices are expandable. Unit, building, and research entries keep their icons and live definition-based stats.
+
 On phones and tablets, rotate to **landscape**. Portrait mode holds the battle until you turn the device. Use **Fullscreen** to expand the game; orientation locking is attempted when the browser supports it. If fullscreen is unavailable, landscape browser play still works.
 
 On touch, **hold for 0.3 seconds, then drag** to marquee-select friendly units. A quick swipe pans the camera; two fingers pan and pinch to zoom. With units selected, tap ground to move, enemies to attack, and trees or gold to gather with workers. Tap a friendly unit to select that unit, or tap a friendly building to inspect it; workers can instead repair/enter an eligible friendly building. **Deselect** clears selection and cancels targeting without stopping existing orders. There are no Pan/Select/Order mode buttons.

@@ -774,6 +774,22 @@ button.small {
 .guide-controls {
   margin: 0;
 }
+.guide-control-group, .guide-advanced {
+  margin-bottom: 12px;
+  padding: 0 10px;
+  border: 1px solid #3c574e;
+  border-radius: 6px;
+}
+.guide-control-group > summary, .guide-advanced > summary {
+  padding: 10px 0;
+  color: #eddaab;
+  font-weight: 650;
+  cursor: pointer;
+}
+.guide-control-group .guide-note { margin-bottom: 0; }
+.guide-control-group .guide-controls { padding-bottom: 8px; }
+.guide-advanced .guide-mechanics { padding-top: 4px; }
+.help-content h4 { margin: 18px 0 8px; color: #eddaab; }
 .guide-controls div {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) 2fr;

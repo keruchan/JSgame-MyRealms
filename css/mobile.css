@@ -75,6 +75,7 @@ button, summary { touch-action: manipulation; }
 .touch-ui .help-header p { font-size: 10px; }
 .touch-ui .help-nav { padding: 5px 14px; }
 .touch-ui .help-nav button, .touch-ui #closeHelp { min-height: 44px; }
+.touch-ui .guide-control-group > summary, .touch-ui .guide-advanced > summary { min-height: 44px; }
 .touch-ui .help-content { padding: 0 14px 16px; }
 .mobile-sell-dialog { width: min(410px, calc(100vw - 28px)); max-height: calc(100dvh - 24px); overflow-y: auto; background: #1c302c; color: #edf0df; border: 1px solid #8da58d; border-radius: 8px; padding: 18px; font: 14px/1.5 system-ui, sans-serif; }
 .mobile-sell-dialog::backdrop { background: #081312bb; }
