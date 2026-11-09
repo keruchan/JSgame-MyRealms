@@ -62,7 +62,6 @@ window.RealmfrontBuildings = (() => {
   );
   const sources = {
     hall: "Castle",
-    house: "House",
     tower: "Tower",
     fortress: "Castle",
     farm: "House",
@@ -75,7 +74,6 @@ window.RealmfrontBuildings = (() => {
   };
   const heights = {
     hall: 1.04,
-    house: 1.32,
     tower: 1.55,
     fortress: 1.1,
     farm: 1.1,
@@ -174,25 +172,7 @@ window.RealmfrontBuildings = (() => {
     if (factionFilters[b.f]) ctx.filter = factionFilters[b.f];
     const colored = ctx.filter;
     if (b.type === "farm") {
-      ctx.filter = "none";
-      ctx.fillStyle = "#6e713d";
-      ctx.fillRect(x - s * 0.56, y - s * 0.15, s * 1.12, s * 0.65);
-      for (let row = 0; row < 4; row++)
-        for (let col = 0; col < 6; col++) {
-          const px = x - s * 0.45 + col * s * 0.16,
-            py = y + row * s * 0.12;
-          ctx.strokeStyle = "#d6ba69";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(px, py + 5);
-          ctx.lineTo(px, py - 5);
-          ctx.moveTo(px - 3, py - 3);
-          ctx.lineTo(px, py);
-          ctx.lineTo(px + 3, py - 3);
-          ctx.stroke();
-        }
-      ctx.filter = colored;
-      imagePart(ctx, file, x - s * 0.13, y + s * 0.02, s * 0.5, time);
+      imagePart(ctx, file, x, bottom, s * .92, time);
       ctx.filter = "none";
       fence(ctx, x, bottom, s * 1.12);
     } else if (b.type === "fortress") {
@@ -203,7 +183,6 @@ window.RealmfrontBuildings = (() => {
     } else {
       const widths = {
         hall: 1.35,
-        house: 0.92,
         tower: 0.9,
         range: 1,
         barracks: 1.32,

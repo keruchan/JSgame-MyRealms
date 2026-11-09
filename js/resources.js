@@ -1,8 +1,9 @@
 "use strict";
 
-// CC0 Tiny Swords trees/rubble plus an original generated golden-deposit atlas.
+// CC0 Tiny Swords trees/rubble, Kenney Tiny Farm crops, and original golden deposits.
 window.RealmfrontResources = (() => {
   const atlas = {
+      "Farm_Tiles.png": [{ x: 112, y: 80, w: 16, h: 16 }],
       "Gold_Deposits.png": [
         {
           x: 110,
@@ -134,6 +135,28 @@ window.RealmfrontResources = (() => {
     return true;
   }
   function draw(ctx, node, time) {
+    if (node.type === "field") {
+      const entry = images.get("Farm_Tiles.png");
+      if (!entry?.ready) return false;
+      const { x, y, r } = node;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = "#6a482d";
+      ctx.fillRect(x - r * 1.2, y - r * .7, r * 2.4, r * 1.4);
+      ctx.strokeStyle = "#9a6f3c";
+      ctx.lineWidth = 2;
+      for (let row = 0; row < 3; row++) {
+        const py = y - r * .45 + row * r * .43;
+        ctx.beginPath(); ctx.moveTo(x - r * 1.1, py + 6); ctx.lineTo(x + r * 1.1, py + 6); ctx.stroke();
+        if (node.amount > 0) for (let col = 0; col < 4; col++) {
+          const px = x - r * .9 + col * r * .6;
+          const sway = time - (node.lastHarvest ?? -100) < .25 ? Math.sin(time * 12 + col) * 1.5 : 0;
+          ctx.drawImage(entry.image, 112, 80, 16, 16, px - 9 + sway, py - 16, 20, 22);
+        }
+      }
+      ctx.restore();
+      return true;
+    }
     const file =
       node.type === "tree"
         ? "Tree.png"
@@ -194,6 +217,7 @@ window.RealmfrontResources = (() => {
     return Math.abs(Math.floor(node.x * 0.17 + node.y * 0.11)) % 4;
   }
   function bounds(node) {
+    if (node.type === "field") return { x: node.x - node.r * 1.2, y: node.y - node.r * .95, w: node.r * 2.4, h: node.r * 1.65 };
     if (node.type === "ore") {
       const frame = atlas["Gold_Deposits.png"][oreVariant(node)],
         height = (node.r * 3.2 * frame.h) / frame.w;

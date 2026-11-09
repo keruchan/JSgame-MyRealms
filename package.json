@@ -1,8 +1,8 @@
 {
-  "name": "realmfront",
+  "name": "king-of-the-conquerors-realm",
   "private": true,
   "version": "1.1.0",
-  "description": "A browser RTS skirmish game",
+  "description": "King of the Conqueror's Realm - a browser RTS skirmish game",
   "scripts": {
     "test": "node --test tests/game.test.cjs",
     "test:mobile": "node tests/mobile.browser.cjs",

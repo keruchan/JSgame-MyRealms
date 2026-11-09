@@ -1,0 +1,11 @@
+{
+  "file": "Farm_Tiles.png",
+  "source": "https://kenney.nl/assets/tiny-farm",
+  "author": "Kenney",
+  "license": "CC0-1.0",
+  "archivePath": "Tilemap/tilemap_packed.png",
+  "width": 192,
+  "height": 176,
+  "sha256": "0c4b3b4058cacf6a9bf021666838156d46da9ce27500d4c13e30cd5a92b722f4",
+  "frames": [{"x": 112, "y": 80, "w": 16, "h": 16}]
+}

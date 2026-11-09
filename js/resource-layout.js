@@ -22,11 +22,16 @@ window.RealmfrontResourceLayout = (() => {
     return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) <= tolerance;
   }
   function generate({ factions, buildings, outposts, roads, random = Math.random }) {
-    const nodes = [], miningSites = [], forests = [];
+    const houseRadius = window.RealmfrontData.economyRules.houseRadius;
+    const nodes = [], miningSites = [], forests = [], fields = [];
     const rand = (min, max) => min + random() * (max - min);
+    const supported = (points, owner, type) => {
+      const house = buildings.find((b) => b.f === owner && b.type === type && b.hp > 0);
+      return house && points.every((p) => distance(p, house) <= houseRadius);
+    };
     const roadEdges = roads.flatMap((route) => route.slice(1).map((p, i) => [route[i], p]));
     function free(p, type) {
-      return terrain.isWalkable(p.x, p.y, 55) &&
+      return terrain.isWalkable(p.x, p.y, type === "field" ? 64 : 55) &&
         buildings.every((b) => distance(p, b) > b.size * 0.72 + 46) &&
         outposts.every((o) => distance(p, o) > 180) &&
         roadEdges.every(([a, b]) => segmentDistance(p, a, b) > 65) &&
@@ -48,7 +53,7 @@ window.RealmfrontResourceLayout = (() => {
     }
     function addNodes(points, type, amount, group, area) {
       for (const p of points) nodes.push({ ...p, type, amount, max: amount,
-        r: type === "ore" ? 20 : rand(16, 20), group, area });
+        r: type === "ore" ? 20 : type === "field" ? 34 : rand(16, 20), group, area });
     }
     function gold(anchor, offsets, name, area, allowed, owner = null, neighbors = []) {
       const site = pack(anchor, offsets, "ore", (center, points) =>
@@ -61,7 +66,7 @@ window.RealmfrontResourceLayout = (() => {
     for (const f of factions) gold(
       { x: f.x - 250, y: f.y + 100 }, [{ x: -60, y: 25 }, { x: 60, y: -25 }],
       `${f.name} deposits`, "starter",
-      (center, points) => distance(center, f) < 490 && points.every((p) =>
+      (center, points) => distance(center, f) < 490 && supported(points, f.id, "mine") && points.every((p) =>
         factions.every((other) => other === f || distance(p, f) < distance(p, other))), f.id,
     );
     const vein = [{ x: -95, y: 40 }, { x: 0, y: -65 }, { x: 95, y: 40 }];
@@ -92,7 +97,7 @@ window.RealmfrontResourceLayout = (() => {
       forests.push({ ...grove.center, id, area, owner, neighbors });
     }
     for (const f of factions) forest({ x: f.x + 260, y: f.y - 100 }, 12, "starter",
-      (center) => distance(center, f) < 550, f.id);
+      (center, points) => distance(center, f) < 550 && supported(points, f.id, "lumber"), f.id);
     for (const site of miningSites.filter((site) => site.area === "frontier")) {
       const [a, b] = site.neighbors.map((id) => factions.find((f) => f.id === id));
       const frontier = terrain.landforms.find((form) => form.role === "frontier" && form.between.every((id) => site.neighbors.includes(id)));
@@ -113,9 +118,26 @@ window.RealmfrontResourceLayout = (() => {
         (center) => forests.every((f) => distance(center, f) >= 230), 512);
       addNodes(solo.points, "tree", 1000, `outlier-${grove.id}`, "outlier");
     }
+    function field(anchor, area, allowed, owner = null, neighbors = []) {
+      const site = pack(anchor, [{ x: -48, y: 0 }, { x: 48, y: 0 }], "field", allowed, 1408);
+      const id = `field-${fields.length}`;
+      addNodes(site.points, "field", area === "starter" ? 1200 : 2400, id, area);
+      fields.push({ ...site.center, id, area, owner, neighbors });
+    }
+    // Every kingdom gets equal farmland; shared frontier plots reward expansion.
+    for (const f of factions) field({ x: f.x - 170, y: f.y - 180 }, "starter",
+      (center, points) => distance(center, f) < 520 && supported(points, f.id, "farm") && points.every((p) =>
+        factions.every((other) => other === f || distance(p, f) < distance(p, other))), f.id);
+    for (const frontier of terrain.landforms.filter((form) => form.role === "frontier")) {
+      const [a, b] = frontier.between.map((id) => factions.find((f) => f.id === id));
+      field({ x: frontier.gate.x + 160, y: frontier.gate.y + 180 }, "frontier",
+        (center, points) => contested(center, points) && balanced(center, a, b, 320), null, [a.id, b.id]);
+    }
+    for (const o of outposts) field({ x: o.x + 170, y: o.y - 170 }, "crossing",
+      (center, points) => distance(center, o) < 700 && contested(center, points));
     // Back-to-front drawing lets neighboring crowns overlap naturally.
     nodes.sort((a, b) => a.y - b.y || a.x - b.x);
-    return { nodes, miningSites, forests };
+    return { nodes, miningSites, forests, fields };
   }
   return { generate };
 })();

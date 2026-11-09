@@ -9,6 +9,7 @@ window.RealmfrontCursors = (() => {
     attack: { x: 6, y: 4, fallback: "crosshair" },
     chop: { x: 18, y: 3, fallback: "pointer" },
     mine: { x: 3, y: 22, fallback: "pointer" },
+    farm: { x: 8, y: 5, fallback: "pointer" },
     repair: { x: 7, y: 6, fallback: "pointer" },
     build: { x: 7, y: 6, fallback: "crosshair" },
     rally: { x: 9, y: 4, fallback: "crosshair" },

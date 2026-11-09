@@ -20,7 +20,7 @@ window.RealmfrontMobile = (() => {
     if (event.pointerType !== "touch") return;
     canvasClicks.delete(event.pointerId);
     canvasFallbackUntil = 0;
-    const button = event.target.closest("#touchControls > button, #mobileUnitCommands > button, #touchDeselect, #realmfrontTitle, #timeStat");
+    const button = event.target.closest("#touchControls > button, #mobileUnitCommands > button, #touchDeselect, #gameTitle, #timeStat");
     if (button && !button.disabled) presses.set(event.pointerId, { button, x: event.clientX, y: event.clientY });
   }, true);
   document.addEventListener("pointercancel", (event) => presses.delete(event.pointerId), true);

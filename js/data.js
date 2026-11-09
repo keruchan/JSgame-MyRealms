@@ -1,6 +1,9 @@
 "use strict";
 
 window.RealmfrontData = (() => {
+  const combatRules = { detectionRange: 450, defenseRadius: 700, defenseLeash: 900, pursuitRange: 550 };
+  const buildRules = { workerRadius: 350 };
+  const economyRules = { houseRadius: 600, hallCapacity: [20, 60, 100] };
   // Building definitions and balance
   const defs = {
     hall: {
@@ -9,47 +12,35 @@ window.RealmfrontData = (() => {
       hp: 1700,
       size: 100,
       color: "#b6c3a3",
-      desc: "Heart of your kingdom. Trains workers and provides population capacity.",
-      cap: 12,
+      desc: "Trains workers and researches upgrades. Upgrade for army capacity: 20 / 60 / 100.",
+      cap: 20,
     },
     farm: {
-      name: "Farm",
+      name: "Farm House",
       cost: { wood: 75 },
       hp: 430,
       size: 67,
       color: "#acb96c",
-      desc: "Produces 1 food/s. One worker can enter to add 1 food/s before bonuses.",
+      desc: "Produces a fixed 1 food/s. Workers harvest fields within 600 units at 1 / 2 / 3 food/s per worker at house levels 1 / 2 / 3. No workers enter.",
       rate: { food: 1 },
-      workerSlots: 1,
     },
     lumber: {
-      name: "Lumber Camp",
+      name: "Lumber House",
       cost: { wood: 45, gold: 30 },
       hp: 440,
       size: 63,
       color: "#aa8660",
-      desc: "Produces 1 wood/s. One worker can enter to add 1 wood/s before bonuses.",
+      desc: "Produces a fixed 1 wood/s. Workers chop trees within 600 units at 1 / 2 / 3 wood/s per worker at house levels 1 / 2 / 3. No workers enter.",
       rate: { wood: 1 },
-      workerSlots: 1,
     },
     mine: {
-      name: "Gold Mine",
+      name: "Mining House",
       cost: { wood: 80, gold: 40 },
       hp: 500,
       size: 65,
       color: "#d1b36d",
-      desc: "Produces 1 gold/s. One worker can enter to add 1 gold/s before bonuses.",
+      desc: "Produces a fixed 1 gold/s. Workers mine deposits within 600 units at 1 / 2 / 3 gold/s per worker at house levels 1 / 2 / 3. No workers enter.",
       rate: { gold: 1 },
-      workerSlots: 1,
-    },
-    house: {
-      name: "House",
-      cost: { wood: 65 },
-      hp: 360,
-      size: 56,
-      color: "#b99677",
-      desc: "Increases population capacity by 8 and recruits workers.",
-      cap: 8,
     },
     barracks: {
       name: "Barracks",
@@ -118,13 +109,13 @@ window.RealmfrontData = (() => {
       cost: { food: 30, gold: 15 },
       hp: 75,
       speed: 78,
-      damage: 5,
-      range: 24,
+      damage: 0,
+      range: 0,
       cool: 1.5,
       radius: 10,
       time: 6,
       kind: "worker",
-      desc: "Gathers wild resources; repairs, staffs buildings, or retrains.",
+      desc: "Harvests fields, trees, and gold deposits. Nearby resource-house levels set gathering output. Repairs or retrains in military buildings. Cannot fight or upgrade as a worker.",
     },
     sword: {
       name: "Swordsman",
@@ -249,7 +240,6 @@ window.RealmfrontData = (() => {
   // Recruitment options
   const unitByBuilding = {
     hall: ["worker"],
-    house: ["worker"],
     barracks: ["sword", "spear", "guard"],
     range: ["archer", "crossbow", "healer"],
     stable: ["cavalry", "raider"],
@@ -273,13 +263,13 @@ window.RealmfrontData = (() => {
       name: "Improved Tools",
       cost: { gold: 120, wood: 140 },
       time: 24,
-      desc: "+25% worker gathering and staffed-building bonus per level.",
+      desc: "+25% worker repair speed per level. Resource output depends only on nearby resource-house levels.",
     },
   };
   const briefs = {
     building: {
-      farm: "1 food/s + worker", lumber: "1 wood/s + worker", mine: "1 gold/s + worker",
-      house: "+8 slots; workers", barracks: "Melee training", range: "Ranged training",
+      farm: "1 food/s; boosts fields", lumber: "1 wood/s; boosts trees", mine: "1 gold/s; boosts mining",
+      barracks: "Melee training", range: "Ranged training",
       stable: "Cavalry training", workshop: "Siege training", tower: "Ranged defense", fortress: "Heavy defense",
     },
     unit: {
@@ -287,7 +277,7 @@ window.RealmfrontData = (() => {
       archer: "Ranged support", crossbow: "Heavy ranged hits", healer: "Heals nearby allies",
       cavalry: "Fast heavy cavalry", raider: "Fast worker hunter", catapult: "Siege artillery",
     },
-    research: { weapons: "+20% military damage", armor: "+10% damage reduction", economy: "+25% worker output" },
+    research: { weapons: "+20% military damage", armor: "+10% damage reduction", economy: "+25% repair speed" },
   };
-  return { defs, udefs, unitByBuilding, research, briefs };
+  return { defs, udefs, unitByBuilding, research, briefs, combatRules, buildRules, economyRules };
 })();

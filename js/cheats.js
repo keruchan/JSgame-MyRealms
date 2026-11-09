@@ -29,7 +29,7 @@ window.RealmfrontCheats = (() => {
       close();
       return;
     }
-    const title = event.target.closest("#realmfrontTitle"),
+    const title = event.target.closest("#gameTitle"),
       time = event.target.closest("#timeStat");
     if (step < 5 && title) step++;
     else if (step === 5 && time) step = 6;
@@ -98,7 +98,7 @@ window.RealmfrontCheats = (() => {
     if (!visible) return;
     const added = hooks.addArmySlots?.() || 0;
     status.textContent = added
-      ? `Added ${added} army slots without houses.`
+      ? `Added ${added} army slots without a Town Hall upgrade.`
       : "Army capacity is already at the 100-unit limit.";
     refresh();
   };

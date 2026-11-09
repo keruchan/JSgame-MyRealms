@@ -85,7 +85,7 @@ function game() {
   let source = fs.readFileSync(path.join(root, "js/game.js"), "utf8");
   source = source.replace(
     "  // Startup",
-    `window.testGame = { get state(){return S}, init, tick, simulateUnits, simulateBuildings, simulateStrategy, issueMove, startResearch, train, cancelTraining, combatDamage, addUnit, addBuilding, updateUI, drawWorld, drawMini, frame, camera, mouse, stopSelected, togglePause, selectSameType, selectClicked, upgradeSelected, sellSelected, placeBuilding, upgradeCost, sellValue, capacity, buildingIncome, enterBuilding, releaseWorker, trainingCost, pendingPop, hit, fitMap, viewport, world, terrain, validPlace, moveToward, grantArmySlots, cursorAction, resourceAt };\n  // Startup`,
+    `window.testGame = { get state(){return S}, init, tick, simulateUnits, simulateBuildings, simulateShots, seekTarget, simulateStrategy, issueMove, startResearch, train, cancelTraining, combatDamage, addUnit, addBuilding, updateUI, drawWorld, drawMini, frame, camera, mouse, stopSelected, togglePause, selectSameType, selectClicked, upgradeSelected, sellSelected, placeBuilding, upgradeCost, sellValue, capacity, buildingIncome, enterBuilding, releaseWorker, trainingCost, pendingPop, hit, fitMap, viewport, world, terrain, validPlace, moveToward, grantArmySlots, cursorAction, resourceAt };\n  // Startup`,
   );
   vm.runInContext(source, sandbox);
   const api = sandbox.window.testGame;
@@ -98,10 +98,18 @@ function game() {
     document,
     listeners,
     api,
+    data: sandbox.window.RealmfrontData,
     advanceTime(ms) {
       now += ms;
     },
   };
+}
+
+function combatGame() {
+  const g = game();
+  g.state.units = []; g.state.buildings = []; g.state.nodes = []; g.state.selected = [];
+  for (const faction of g.state.factions) { faction.pop = 0; faction.cap = 100; }
+  return g;
 }
 
 test("live HUD updates preserve action and selection command buttons", () => {
@@ -136,53 +144,78 @@ test("resource buildings produce exactly one per second without staff, even afte
   }
 });
 
-test("workers walk inside resource buildings, add income, occupy one slot, and can leave", () => {
-  const g = game(), s = g.state, f = s.factions[0];
-  const b = s.buildings.find((b) => b.f === 0 && b.type === "lumber");
-  const workers = s.units.filter((u) => u.f === 0 && u.type === "worker"), worker = workers[0], pop = f.pop;
-  s.selected = [worker];
-  g.issueMove(b.x, b.y);
-  assert.equal(worker.job.kind, "enter");
-  assert.equal(g.buildingIncome(b, "wood"), 1, "walking workers do not boost income");
-  assert.equal(g.enterBuilding(workers[1], b), false, "another worker's reservation cannot be stolen");
-  worker.x = b.x + b.size * 0.6 + 10;
-  worker.y = b.y;
-  g.simulateUnits(.1);
-  assert.equal(b.workers[0], worker);
-  assert(!s.units.includes(worker));
-  assert.equal(f.pop, pop);
-  assert.equal(s.selected[0], b);
-  assert.equal(g.buildingIncome(b, "wood"), 2);
-  assert.equal(g.enterBuilding(workers[1], b), false);
-  const wood = f.resources.wood;
-  g.simulateBuildings(1);
-  assert.equal(f.resources.wood - wood, 2);
-  b.level = 3;
-  f.tech.economy = 2;
-  assert.equal(g.buildingIncome(b, "wood"), 3.25);
-  g.releaseWorker(b, worker);
-  assert(s.units.includes(worker));
-  assert.equal(f.pop, pop);
-  assert.equal(g.buildingIncome(b, "wood"), 1);
-  assert(g.terrain.isWalkable(worker.x, worker.y, 30));
+test("resource houses never accept workers; outdoor gathering scales by matching house level", () => {
+  for (const [houseType, nodeType, resource] of [["farm", "field", "food"], ["mine", "ore", "gold"], ["lumber", "tree", "wood"]]) {
+    const g = combatGame(), s = g.state, f = s.factions[0];
+    const b = g.addBuilding(0, houseType, 650, 650, true);
+    const u = g.addUnit(0, "worker", 780, 650, true);
+    const node = {type:nodeType, x:800, y:650, r:34, amount:1000, max:1000};
+    s.nodes = [node];
+    assert.equal(g.enterBuilding(u,b), false, "workers cannot enter resource houses");
+    assert.equal(b.workers.length,0);
+    for (let level=1;level<=3;level++) {
+      b.level=level; s.selected=[u]; g.issueMove(node.x,node.y);
+      assert.equal(u.job.kind,"gather");
+      const before=f.resources[resource], left=node.amount;
+      g.simulateUnits(1); g.simulateBuildings(1);
+      assert.equal(f.resources[resource]-before,1+level, resource+" passive plus outdoor gathering");
+      assert.equal(left-node.amount,level);
+      assert(s.units.includes(u));
+    }
+    f.tech.economy=3;
+    const before=f.resources[resource]; g.simulateUnits(1); g.simulateBuildings(1);
+    assert.equal(f.resources[resource]-before,4,"research never changes the exact level-based output");
+  }
 });
 
-test("houses recruit workers with normal costs, queue reservations, and rally orders", () => {
-  const g = game(), s = g.state, f = s.factions[0], b = s.buildings.find((b) => b.f === 0 && b.type === "house");
-  const before = { ...f.resources }, pop = f.pop;
-  b.rally = { x: 800, y: 700 };
-  g.train(b, "worker");
-  assert.equal(f.resources.food, before.food - 30);
-  assert.equal(f.resources.gold, before.gold - 15);
-  assert.equal(g.pendingPop(0), 1);
-  g.train(b, "archer");
-  assert.equal(b.train.length, 1, "houses only recruit workers");
-  g.simulateBuildings(6.1);
-  const worker = s.units.at(-1);
-  assert.equal(worker.type, "worker");
-  assert.equal(f.pop, pop + 1);
-  assert.equal(worker.move.x, 800);
-  assert.equal(g.pendingPop(0), 0);
+test("gathering uses the highest nearby owned matching house, without stacking, and falls back after loss", () => {
+  const g=combatGame(),s=g.state,f=s.factions[0];
+  const worker=g.addUnit(0,"worker",880,650,true);
+  const node={type:"ore",x:900,y:650,r:20,amount:100,max:100}; s.nodes=[node];
+  const own=g.addBuilding(0,"mine",300,650,true); own.level=2;
+  const duplicate=g.addBuilding(0,"mine",450,650,true); duplicate.level=3;
+  const wrong=g.addBuilding(0,"lumber",800,650,true);wrong.level=3;
+  const enemy=g.addBuilding(1,"mine",900,720,true);enemy.level=3;
+  const far=g.addBuilding(0,"mine",1501,650,true);far.level=3;
+  s.selected=[worker];g.issueMove(node.x,node.y);
+  const gather=(expected)=>{const before=f.resources.gold;g.simulateUnits(1);assert.equal(f.resources.gold-before,expected);};
+  gather(3); duplicate.hp=0;gather(2); // exact 600-unit boundary
+  own.x=299;gather(1);own.x=300;own.level=3;gather(3);
+  own.f=1;gather(1);
+  node.amount=.5;gather(.5);assert.equal(node.amount,0,"finite nodes cannot be overdrawn");
+});
+
+test("each outdoor worker earns the matching house level while its base income stays one", () => {
+  const g=combatGame(),s=g.state,f=s.factions[0];
+  const house=g.addBuilding(0,"farm",650,650,true);house.level=2;
+  const a=g.addUnit(0,"worker",780,650,true),b=g.addUnit(0,"worker",820,650,true);
+  const field={type:"field",x:800,y:650,r:34,amount:100,max:100};s.nodes=[field];
+  s.selected=[a,b];g.issueMove(field.x,field.y);
+  const before=f.resources.food;g.simulateUnits(1);g.simulateBuildings(1);
+  assert.equal(f.resources.food-before,5,"1 passive + 2 from each of two farmers");
+  assert.equal(field.amount,96);assert.equal(house.workers.length,0);
+});
+
+test("Town Halls alone recruit workers and upgrade capacity to 20, 60, and 100", () => {
+  const g=game(),s=g.state,f=s.factions[0],hall=s.buildings.find(b=>b.f===0&&b.type==="hall");
+  assert.equal(g.data.defs.house,undefined);assert(!s.buildings.some(b=>b.type==="house"));
+  assert.equal(f.cap,20);
+  f.resources={gold:10000,wood:10000,food:10000};
+  for(const cap of [60,100]) {s.selected=[hall];g.upgradeSelected();assert.equal(f.cap,cap);assert.equal(g.capacity(hall),cap);}
+  const before={...f.resources};s.selected=[hall];g.upgradeSelected();assert.deepEqual({...f.resources},before);
+  hall.rally={x:800,y:700};const pop=f.pop;
+  g.train(hall,"worker");assert.equal(hall.train.length,1);assert.equal(g.pendingPop(0),1);
+  g.simulateBuildings(6.1);assert.equal(f.pop,pop+1);assert.equal(s.units.at(-1).move.x,800);
+});
+
+test("workers cannot level up, but military retraining unlocks fighter upgrades", () => {
+  const g=game(),s=g.state,f=s.factions[0],u=s.units.find(u=>u.f===0&&u.type==="worker");
+  f.resources={gold:10000,wood:10000,food:10000};const before={...f.resources};
+  s.selected=[u];g.upgradeSelected();assert.equal(u.level,1);assert.deepEqual({...f.resources},before);
+  const b=s.buildings.find(b=>b.f===0&&b.type==="barracks");u.x=b.x;u.y=b.y;
+  assert(g.enterBuilding(u,b));g.train(b,"sword");g.simulateBuildings(8.1);
+  assert.equal(u.type,"sword");assert.equal(u.level,1);
+  s.selected=[u];g.upgradeSelected();assert.equal(u.level,2);
 });
 
 test("workers retrain into archers at full population using their existing slots and cost credit", () => {
@@ -363,17 +396,14 @@ test("cheat army slots unlock recruitment without houses, cap at 100, and reset 
   const g = game(),
     s = g.state,
     f = s.factions[0],
-    house = s.buildings.find((b) => b.f === 0 && b.type === "house");
-  s.selected = [house];
-  g.sellSelected();
-  assert.equal(f.cap, 12);
+    hall = s.buildings.find((b) => b.f === 0 && b.type === "hall");
+  assert.equal(f.cap, 20);
   f.pop = f.cap;
-  const hall = s.buildings.find((b) => b.f === 0 && b.type === "hall");
   g.train(hall, "worker");
   assert.equal(hall.train.length, 0);
   const buildings = s.buildings.length;
   assert.equal(g.grantArmySlots(), 10);
-  assert.equal(f.cap, 22);
+  assert.equal(f.cap, 30);
   assert.equal(s.buildings.length, buildings);
   g.train(hall, "worker");
   assert.equal(hall.train.length, 1);
@@ -399,6 +429,124 @@ test("archers and crossbowmen stand and fire instead of retreating from nearby e
     assert.equal(unit.y, position.y);
     assert(g.state.shots.some((shot) => shot.f === 0 && shot.to === enemy));
   }
+});
+
+test("all combat units and factions share detection for enemies and structures without changing weapon ranges", () => {
+  const g = combatGame(), s = g.state;
+  const ranges = {worker:0,sword:25,spear:39,guard:26,archer:225,crossbow:240,healer:180,cavalry:31,raider:30,catapult:330};
+  for (const [type, range] of Object.entries(ranges)) assert.equal(g.data.udefs[type].range,range);
+  assert.equal(g.data.combatRules.detectionRange,450);
+  for (const f of [0,1,2]) for (const type of Object.keys(ranges).filter(t=>t!=="healer"&&t!=="worker")) {
+    s.units = []; s.buildings = [];
+    const unit=g.addUnit(f,type,550,650,true),enemyFaction=(f+1)%3;
+    unit.hold=true;
+    const enemy=g.addUnit(enemyFaction,"worker",999,650,true);
+    g.seekTarget(unit);assert.equal(unit.target,enemy,`${type} in faction ${f} detects within 450`);
+    enemy.x=1001;unit.target=null;g.seekTarget(unit);assert.equal(unit.target,null,"outside shared detection");
+    s.units=[unit];const building=g.addBuilding(enemyFaction,"farm",999,650,true);
+    g.seekTarget(unit);assert.equal(unit.target,building,"structures use the same detection distance");
+    building.x=1001;unit.target=null;g.seekTarget(unit);assert.equal(unit.target,null);
+  }
+});
+
+test("melee troops identify the actual ranged attacker and close in after a projectile hit", () => {
+  const g=combatGame(),s=g.state,soldier=g.addUnit(0,"sword",600,650,true),archer=g.addUnit(1,"archer",825,650,true);
+  for(const u of s.units){u.hold=true;u.think=1000;u.attackTimer=1000;}
+  archer.target=soldier;archer.attackTimer=0;
+  g.simulateUnits(.01);assert.equal(s.shots.length,1);assert.equal(s.shots[0].source,archer);
+  assert.equal(soldier.target,null);g.simulateShots(1);
+  assert.equal(soldier.target,archer);assert(soldier.defense);assert.equal(soldier.hold,false);
+  const oldX=soldier.x;g.simulateUnits(.25);
+  assert(soldier.x>oldX,"melee closes the gap instead of ignoring the archer");
+  assert.equal(archer.x,825,"archer does not retreat automatically");assert.equal(archer.hp,archer.maxHp,"melee still must reach its own weapon range");
+});
+
+test("defense alarms have a wider local radius, work for every faction and fire even on a lethal hit", () => {
+  const g=combatGame(),s=g.state;
+  for(const owner of [0,1,2]){
+    s.units=[];s.buildings=[];
+    const enemy=(owner+1)%3, victim=g.addBuilding(owner,"farm",650,650,true),guard=g.addUnit(owner,"sword",1200,650,true),far=g.addUnit(owner,"sword",2000,650,true),attacker=g.addUnit(enemy,"archer",450,650,true);
+    for(const u of s.units){u.hold=true;u.think=1000;u.attackTimer=1000;}
+    g.seekTarget(guard);assert.equal(guard.target,null,"attacker is outside personal detection");
+    victim.hp=1;g.hit(victim,2,enemy,attacker);
+    assert.equal(victim.hp,0);assert.equal(guard.target,attacker,"nearby allies defend the destroyed building too");
+    assert.equal(far.target,null);assert.equal(far.defense,null,"distant units receive no alarm");
+    g.simulateUnits(.1);assert.equal(guard.target,attacker,"an assisted target beyond personal detection is retained");
+  }
+});
+
+test("attacking a distant enemy base does not summon home defenders, including during enemy retaliation", () => {
+  const g=combatGame(),home=g.addUnit(0,"sword",700,650,true),army=g.addUnit(0,"sword",5920,1260,true),base=g.addBuilding(1,"farm",5950,1283,true),defender=g.addUnit(1,"sword",6000,1283,true);
+  for(const u of g.state.units){u.hold=true;u.think=1000;u.attackTimer=1000;}
+  army.hold=false;army.target=base;army.attackTimer=0;
+  g.simulateUnits(.05);
+  assert(base.hp<base.maxHp);assert.equal(defender.target,army,"the attacked kingdom defends locally");
+  assert.equal(home.defense,null);assert.equal(home.target,null);assert.equal(home.move,null);
+  g.hit(army,1,1,defender);
+  assert.equal(home.defense,null,"counterattacks far from home do not alert the home army");
+  assert.equal(home.target,null);assert.equal(home.move,null);
+});
+
+test("workers keep working during attacks while nearby fighters defend; troops resume movement after defense", () => {
+  const g=combatGame(),s=g.state,worker=g.addUnit(0,"worker",600,650,true),enemy=g.addUnit(1,"archer",800,650,true),guard=g.addUnit(0,"sword",1000,650,true);
+  enemy.hold=true;enemy.think=1000;enemy.attackTimer=1000;
+  const tree={x:600,y:680,r:18,type:"tree",amount:100,max:100};s.nodes=[tree];
+  const job={kind:"gather",target:tree};worker.job=job;
+  g.hit(worker,1,1,enemy);assert.equal(worker.job,job);assert.equal(worker.target,null);assert.equal(worker.defense,null);assert.equal(guard.target,enemy);
+  const wood=s.factions[0].resources.wood;g.simulateUnits(.1);
+  assert.equal(worker.job,job);assert(s.factions[0].resources.wood>wood,"gathering continues under attack");
+  s.units=[];s.nodes=[];const soldier=g.addUnit(0,"sword",600,650,true),attacker=g.addUnit(1,"archer",800,650,true),goal={x:1050,y:650};
+  attacker.hold=true;attacker.think=1000;attacker.attackTimer=1000;soldier.move=goal;
+  g.hit(soldier,1,1,attacker);assert.equal(soldier.move,null);attacker.x=2000;g.simulateUnits(.1);
+  assert.equal(soldier.move,goal,"movement resumes when the attacker leaves the local defense area");
+  attacker.x=800;g.hit(soldier,1,1,attacker);assert(soldier.defense);
+  s.selected=[soldier];g.issueMove(475,900);assert.equal(soldier.defense,null);
+  attacker.hp=0;g.simulateUnits(.1);assert.equal(soldier.move.x,475);assert.equal(soldier.move.y,900,"new order takes priority over pre-defense movement");
+});
+
+test("workers never detect enemies or accept attack orders, including in mixed selections", () => {
+  const g=combatGame(),s=g.state,worker=g.addUnit(0,"worker",600,650,true),enemy=g.addUnit(1,"archer",800,650,true),fighter=g.addUnit(0,"sword",650,700,true);
+  for(const u of s.units){u.think=1000;u.attackTimer=1000;u.hold=true;}
+  const tree={x:600,y:680,r:18,type:"tree",amount:100,max:100},job={kind:"gather",target:tree};s.nodes=[tree];worker.job=job;
+  assert.equal(g.data.udefs.worker.damage,0);assert.equal(g.data.udefs.worker.range,0);
+  for(const faction of [0,1,2]){worker.f=faction;g.seekTarget(worker);assert.equal(worker.target,null,"workers in every kingdom ignore enemies");}worker.f=0;
+  s.selected=[worker];g.updateUI();assert(g.document.getElementById("attackMove").disabled);
+  assert(!g.document.getElementById("detailCommands")._commandRows.some(b=>b.textContent.startsWith("Attack")));
+  g.document.getElementById("attackMove").onclick();assert.equal(s.command,null);
+  g.issueMove(enemy.x,enemy.y);assert.equal(worker.job,job);assert.equal(worker.target,null);assert.equal(worker.move,null);
+  s.selected=[worker,fighter];g.issueMove(enemy.x,enemy.y);assert.equal(fighter.target,enemy);assert.equal(worker.job,job);assert.equal(worker.target,null);
+  g.issueMove(1050,650,true);assert(fighter.attackMove);assert.equal(worker.attackMove,false);assert.equal(worker.job,job);
+  worker.target=enemy;worker.attackTimer=0;const hp=enemy.hp;g.simulateUnits(.1);
+  assert.equal(worker.target,null);assert.equal(worker.defense,null);assert.equal(worker.job,job);assert.equal(enemy.hp,hp);
+});
+
+test("healers support attacked allies without attacking, and towers keep their weapon range", () => {
+  const g=combatGame(),s=g.state,patient=g.addUnit(0,"worker",650,650,true),healer=g.addUnit(0,"healer",1200,650,true),enemy=g.addUnit(1,"archer",450,650,true);
+  for(const u of s.units){u.think=1000;u.hold=true;u.attackTimer=1000;}
+  g.hit(patient,1,1,enemy);assert.equal(healer.target,patient);const x=healer.x;g.simulateUnits(.1);
+  assert(healer.x<x);assert.equal(healer.target,patient);assert.equal(enemy.hp,enemy.maxHp);
+  s.units=[];s.buildings=[];const tower=g.addBuilding(0,"tower",650,650,true),target=g.addUnit(1,"archer",950,650,true);
+  tower.attackTimer=0;g.simulateBuildings(.1);assert.equal(s.shots.length,0,"detection does not extend tower fire");
+  target.x=850;g.simulateBuildings(.1);assert.equal(s.shots.length,1);assert.equal(s.shots[0].source,tower);
+  assert.equal(g.data.defs.tower.range,250);assert.equal(g.data.defs.fortress.range,285);
+});
+
+test("idle defenders return to their post instead of extending a chase beyond the local defense area", () => {
+  const g=combatGame(),guard=g.addUnit(0,"sword",600,650,true),attacker=g.addUnit(1,"archer",800,650,true);
+  guard.hold=true;attacker.hold=true;attacker.think=1000;attacker.attackTimer=1000;
+  g.hit(guard,1,1,attacker);guard.x=1550;attacker.x=1600;
+  g.simulateUnits(.1);
+  assert.equal(guard.defense,null);assert.equal(guard.target,null);assert(guard.defenseReturn);
+  assert.equal(guard.move.x,600);assert(guard.x<1550,"returns toward its post despite the attacker still being nearby");
+  for(let i=0;i<250&&guard.move;i++)g.simulateUnits(.05);
+  assert.equal(guard.move,null);assert.equal(guard.hold,true);assert.equal(guard.defenseReturn,null);
+});
+
+test("siege splash alerts each victim's allies to the real attacker in multi-kingdom combat", () => {
+  const g=combatGame(),s=g.state,catapult=g.addUnit(2,"catapult",900,650,true),target=g.addUnit(1,"worker",650,650,true),victim=g.addUnit(0,"sword",680,650,true),guard=g.addUnit(0,"sword",1100,650,true);
+  for(const u of s.units){u.think=1000;u.hold=true;u.attackTimer=1000;}
+  catapult.target=target;catapult.attackTimer=0;g.simulateUnits(.01);assert.equal(s.shots[0].source,catapult);
+  g.simulateShots(2);assert(victim.hp<victim.maxHp);assert.equal(guard.target,catapult);assert.equal(guard.defense.attacker,catapult);
 });
 
 test("A arms attack-move, a ground click issues it, and A does not pan the camera", () => {
@@ -734,21 +882,23 @@ test("downloaded sprite checksums and animation crops match every faction and ro
   );
 });
 
-test("unit clicks select one, all fighters, then workers; worker doubles select only workers", () => {
+test("unit multi-clicks select matching fighters then all fighters, while worker multi-clicks always exclude fighters", () => {
   const g = game(), s = g.state;
   const fighter = s.units.find((u) => u.f === 0 && u.type === "sword");
   g.addUnit(0, "guard", 900, 700, true);
+  g.addUnit(0, "sword", 850, 700, true);
   const enemy = g.addUnit(1, "sword", 1000, 700, true);
   const dead = g.addUnit(0, "archer", 950, 700, true); dead.hp = 0;
   g.selectClicked(fighter);
   assert.equal(s.selected.length, 1);
   assert.equal(s.selected[0], fighter);
   g.advanceTime(120); g.selectClicked(fighter);
-  assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.hp > 0 && u.type !== "worker").length);
-  assert(s.selected.every((u) => u.type !== "worker" && u !== enemy && u !== dead));
+  assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.hp > 0 && u.type === fighter.type).length);
+  assert(s.selected.every((u) => u.type === fighter.type && u !== enemy && u !== dead));
   g.advanceTime(120); g.selectClicked(fighter);
-  assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.hp > 0).length);
-  assert(s.selected.some((u) => u.type === "worker"));
+  assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.hp > 0 && u.type !== "worker").length);
+  assert(s.selected.every((u) => u.type !== "worker"));
+  for(let i=0;i<3;i++){g.advanceTime(120);g.selectClicked(fighter);assert(s.selected.every(u=>u.type!=="worker"));}
   g.advanceTime(600); g.selectClicked(fighter);
   assert.equal(s.selected.length, 1);
   const worker = s.units.find((u) => u.f === 0 && u.type === "worker");
@@ -757,6 +907,7 @@ test("unit clicks select one, all fighters, then workers; worker doubles select 
   g.advanceTime(120); g.selectClicked(worker);
   assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.type === "worker" && u.hp > 0).length);
   assert(s.selected.every((u) => u.type === "worker"));
+  for(let i=0;i<4;i++){g.advanceTime(120);g.selectClicked(worker);assert(s.selected.every(u=>u.type==="worker"));assert.equal(s.selected.length,s.units.filter(u=>u.f===0&&u.type==="worker"&&u.hp>0).length);}
   g.document.getElementById("touchDeselect").onclick();
   assert.equal(s.selected.length, 0);
 });
@@ -814,20 +965,20 @@ test("selling upgraded buildings removes exact capacity and refunds queued recru
     s = g.state,
     f = s.factions[0];
   f.resources = { gold: 10000, food: 10000, wood: 10000 };
-  const house = s.buildings.find((o) => o.f === 0 && o.type === "house"),
+  const house = s.buildings.find((o) => o.f === 0 && o.type === "farm"),
     hall = s.buildings.find((o) => o.f === 0 && o.type === "hall");
   const barracks = s.buildings.find((o) => o.f === 0 && o.type === "barracks");
   const oldCap = f.cap;
-  s.selected = [house];
+  s.selected = [hall];
   g.upgradeSelected();
-  assert(f.cap > oldCap);
+  assert.equal(f.cap, 60);
   g.train(barracks, "sword");
   const refund = g.sellValue(barracks),
     gold = f.resources.gold,
     food = f.resources.food;
   s.selected = [house, barracks, hall];
   g.sellSelected();
-  assert.equal(f.cap, oldCap - 8);
+  assert.equal(f.cap, 60, "selling resource/training buildings does not remove Town Hall capacity");
   assert.equal(hall.hp, hall.maxHp);
   assert.equal(s.selected.length, 1);
   assert.equal(f.resources.gold, gold + (refund.gold || 0) + 35);
@@ -882,7 +1033,7 @@ test("Escape deselects and cancels targeting/placement without stopping orders o
   assert.equal(u.move, destination);
   assert.equal(s.groups[1][0], u.id);
   s.selected = [s.buildings.find((b) => b.f === 0)];
-  s.placement = "house";
+  s.placement = "farm";
   s.paused = true;
   g.listeners.keydown({ key: "Escape", preventDefault() {} });
   assert.equal(s.selected.length, 0);
@@ -895,24 +1046,66 @@ test("repeat placement keeps its type, each click pays, and sea/invalid clicks n
     s = g.state,
     f = s.factions[0];
   f.resources = { gold: 10000, food: 10000, wood: 10000 };
-  s.placement = "house";
+  s.placement = "farm";
   const spots = [];
   for (let x = 150; x < 1200; x += 96)
     for (let y = 150; y < 1100; y += 96)
-      if (g.validPlace("house", x, y)) spots.push({ x, y });
+      if (g.validPlace("farm", x, y)) spots.push({ x, y });
   const first = spots[0],
     wood = f.resources.wood;
   assert(g.placeBuilding(first.x, first.y, true));
-  assert.equal(s.placement, "house");
-  assert.equal(f.resources.wood, wood - 65);
+  assert.equal(s.placement, "farm");
+  assert.equal(f.resources.wood, wood - 75);
   assert.equal(g.placeBuilding(first.x, first.y, true), null);
-  assert.equal(f.resources.wood, wood - 65);
+  assert.equal(f.resources.wood, wood - 75);
   assert.equal(g.placeBuilding(-100, 100, true), null);
-  assert.equal(f.resources.wood, wood - 65);
-  const second = spots.find((p) => g.validPlace("house", p.x, p.y));
+  assert.equal(f.resources.wood, wood - 75);
+  const second = spots.find((p) => g.validPlace("farm", p.x, p.y));
   assert(g.placeBuilding(second.x, second.y, false));
   assert.equal(s.placement, null);
-  assert.equal(f.resources.wood, wood - 130);
+  assert.equal(f.resources.wood, wood - 150);
+});
+
+test("all purchasable buildings can be placed far from base around a friendly worker", () => {
+  const g=game(),s=g.state,builder=s.units.find(u=>u.f===0&&u.type==="worker");
+  s.units=s.units.filter(u=>u.f!==0||u.type!=="worker"||u===builder);
+  const types=Object.keys(g.data.defs).filter(type=>type!=="hall");
+  let site;
+  for(let x=2004;x<5800&&!site;x+=120)for(let y=900;y<4100&&!site;y+=120){
+    if(!g.terrain.isWalkable(x-120,y,30))continue;
+    builder.x=x-120;builder.y=y;
+    if(types.every(type=>g.validPlace(type,x,y)))site={x,y};
+  }
+  assert(site,"remote construction clearing");
+  assert(Math.hypot(site.x-s.factions[0].x,site.y-s.factions[0].y)>850,"not limited to the starting base");
+  builder.job={kind:"gather",target:{x:builder.x,y:builder.y,r:18,type:"tree",amount:100}};
+  s.selected=[];
+  for(const type of types)assert(g.validPlace(type,site.x,site.y),type+" can be built with an unselected working builder");
+  const wood=s.factions[0].resources.wood,count=s.buildings.length;
+  s.placement="farm";assert(g.placeBuilding(site.x,site.y));
+  assert.equal(s.buildings.length,count+1);assert.equal(s.factions[0].resources.wood,wood-75);
+  assert(s.units.includes(builder));assert.equal(builder.type,"worker");assert(builder.job,"building does not consume the worker or stop its work");
+});
+
+test("construction requires a living deployed worker of the owner and rechecks the radius before charging", () => {
+  const g=game(),s=g.state,builder=s.units.find(u=>u.f===0&&u.type==="worker");
+  s.units=[builder];s.buildings=[];s.nodes=[];s.selected=[];
+  const site={x:1008,y:648};builder.x=658;builder.y=648;
+  assert.equal(g.data.buildRules.workerRadius,350);assert(g.validPlace("farm",site.x,site.y),"350 units is inside build range");
+  builder.x=657;assert(!g.validPlace("farm",site.x,site.y),"351 units is outside build range");
+  g.addUnit(0,"sword",site.x,site.y,true);g.addUnit(1,"worker",site.x,site.y,true);
+  assert(!g.validPlace("farm",site.x,site.y),"fighters and rival workers cannot enable player construction");
+  assert(g.validPlace("farm",site.x,site.y,1),"the rival can build around its own worker, away from its original base");
+  const wood=s.factions[0].resources.wood,count=s.buildings.length;s.placement="farm";
+  assert.equal(g.placeBuilding(site.x,site.y),null);assert.equal(s.factions[0].resources.wood,wood);assert.equal(s.buildings.length,count);
+  builder.x=658;builder.hp=0;assert(!g.validPlace("farm",site.x,site.y),"dead workers do not count");
+  builder.hp=builder.maxHp;assert(g.validPlace("farm",site.x,site.y));
+  const farm=g.addBuilding(0,"barracks",builder.x,builder.y,true);assert(g.enterBuilding(builder,farm));
+  assert(!g.validPlace("farm",site.x,site.y),"staff inside a building do not provide construction range");
+  g.releaseWorker(farm,builder);builder.x=658;builder.y=648;
+  assert(g.placeBuilding(site.x,site.y));assert.equal(s.factions[0].resources.wood,wood-75);
+  assert(!g.validPlace("farm",site.x,site.y),"an existing building still blocks overlapping placement");
+  assert(!g.validPlace("farm",-24,648),"workers never enable building in the sea");
 });
 
 test("doubled island fits completely, camera centers letterboxing, and sea rejects orders", () => {
@@ -960,7 +1153,7 @@ test("purchase cards use brief summaries and put full descriptions in the detail
   const g = game(),
     s = g.state;
   const cards = g.document.getElementById("actions").children;
-  assert(g.document.getElementById("details").innerHTML.includes("Produces 1 food/s. One worker can enter"));
+  assert(g.document.getElementById("details").innerHTML.includes("Produces a fixed 1 food/s. Workers harvest fields"));
   assert(
     cards.some((card) =>
       card.children.some(
@@ -975,7 +1168,7 @@ test("purchase cards use brief summaries and put full descriptions in the detail
   assert(
     g.document
       .getElementById("details")
-      .innerHTML.includes("Produces 1 food/s."),
+      .innerHTML.includes("Produces a fixed 1 food/s."),
   );
   const hall = s.buildings.find((o) => o.f === 0 && o.type === "hall");
   s.placement = null;
@@ -996,7 +1189,7 @@ test("purchase cards use brief summaries and put full descriptions in the detail
   assert(workerCard.description.textContent.length <= 24);
   const resources = { ...s.factions[0].resources }, queueLength = hall.train.length;
   workerCard.btn.onclick();
-  assert(g.document.getElementById("details").innerHTML.includes("Gathers wild resources; repairs, staffs buildings, or retrains."));
+  assert(g.document.getElementById("details").innerHTML.includes("Harvests fields, trees, and gold deposits."));
   assert.equal(hall.train.length, queueLength, "inspecting a unit does not queue it");
   assert.deepEqual({ ...s.factions[0].resources }, resources, "inspecting a unit does not spend resources");
   assert(g.document.getElementById("details").innerHTML.includes('id="catalogTrain"'));
@@ -1126,9 +1319,18 @@ test("resources scale with kingdoms and form safe starter groves and contested g
     assert.equal(ores.length, 5 * kingdoms + 9);
     assert.equal(s.miningSites.filter((site) => site.area === "crossing").length, 3);
     assert.equal(s.miningSites.filter((site) => site.area === "frontier").length, kingdoms);
+    assert.equal(s.fields.filter((site) => site.area === "starter").length, kingdoms);
+    assert.equal(s.fields.filter((site) => site.area === "frontier").length, kingdoms);
+    assert.equal(s.fields.filter((site) => site.area === "crossing").length, 3);
     for (const f of s.factions) {
       const site = s.miningSites.find((site) => site.owner === f.id);
       const grove = s.forests.find((grove) => grove.owner === f.id);
+      const field = s.fields.find((field) => field.owner === f.id);
+      const crops = s.nodes.filter((n) => n.group === field.id);
+      assert.equal(crops.length, 2);
+      assert(crops.every((n) => n.type === "field" && n.amount === 1200));
+      assert(Math.hypot(field.x - f.x, field.y - f.y) < 520);
+      assert.equal(s.fields.filter((field) => field.neighbors.includes(f.id)).length, 2);
       const starter = ores.filter((n) => n.group === site.id);
       assert.equal(starter.length, 2);
       assert.equal(starter.reduce((sum, n) => sum + n.amount, 0), 2400);
@@ -1149,6 +1351,10 @@ test("resources scale with kingdoms and form safe starter groves and contested g
         const [a, b] = site.neighbors.map((id) => s.factions[id]);
         assert(Math.abs(routeLength(a, site) - routeLength(b, site)) <= 220.001, "shared gold has similar walking distance for both neighbors");
       }
+    }
+    for (const field of s.fields.filter((field) => field.area === "frontier")) {
+      const [a,b] = field.neighbors.map((id) => s.factions[id]);
+      assert(Math.abs(routeLength(a,field)-routeLength(b,field)) <= 320.001, "shared fields have similar walking distance for both neighbors");
     }
     const trees = s.nodes.filter((n) => n.type === "tree");
     assert(trees.filter((n) => n.area === "outlier").length < trees.length * 0.1);
@@ -1269,7 +1475,7 @@ test("nine enemies have safe settlements, unique colors, and reachable crossings
     t = g.terrain;
   assert.equal(s.enemyCount, 9);
   assert.equal(s.factions.length, 10);
-  assert.equal(s.buildings.length, 60);
+  assert.equal(s.buildings.length, 50);
   assert.equal(new Set(s.factions.map((f) => f.color)).size, 10);
   assert(s.factions.every((f) => /^#[0-9a-f]{6}$/i.test(f.color)));
   for (const b of s.buildings)
@@ -1314,7 +1520,7 @@ test("orders snap off cliffs, construction rejects obstacles, and separation sta
   s.selected = [u];
   g.issueMove(1500, 2350);
   assert(t.isWalkable(u.move.x, u.move.y, 30));
-  assert.equal(g.validPlace("house", 1500, 2350), false);
+  assert.equal(g.validPlace("farm", 1500, 2350), false);
   const a = g.addUnit(0, "sword", 1216, 2300, true),
     b = g.addUnit(0, "sword", 1216, 2300, true);
   a.hold = b.hold = true;
@@ -1340,6 +1546,7 @@ test("resource sprite crops remain valid through idle, harvesting, and depleted 
       ),
     ),
   );
+  m.files.push(JSON.parse(fs.readFileSync(path.join(root, "assets/resources/farm-fields.json"), "utf8")));
   for (const f of m.files) {
     const bytes = fs.readFileSync(path.join(root, "assets/resources", f.file));
     assert.equal(createHash("sha256").update(bytes).digest("hex"), f.sha256);
@@ -1367,7 +1574,7 @@ test("resource sprite crops remain valid through idle, harvesting, and depleted 
       },
       { get: (o, k) => o[k] ?? (() => {}) },
     );
-  for (const type of ["tree", "ore"])
+  for (const type of ["tree", "ore", "field"])
     for (const x of [500, 506, 512, 518])
       for (const amount of [0, 100, 1400])
         for (const time of [0, 0.1, 0.3, 0.6, 1, 3])
@@ -1398,7 +1605,7 @@ test("action cursors load distinct full-size artwork with valid tool hotspots", 
     classList: { toggle() {} }, style: {}, textContent: "",
   };
   const point = { inside: true, x: 50, y: 50, width: 500, height: 300 };
-  assert.equal(Object.keys(cursors).length, 12);
+  assert.equal(Object.keys(cursors).length, 13);
   for (const [kind, cursor] of Object.entries(cursors)) {
     const svg = fs.readFileSync(path.join(root, "assets/cursors", `${kind}.svg`), "utf8");
     const width = Number(svg.match(/width="(\d+)"/)[1]);
@@ -1432,7 +1639,7 @@ test("cursor intent follows selection, lumber, mining, repair, attack, and block
   assert.equal(g.cursorAction().kind, "mine");
   ore.amount = 0;
   assert.equal(g.cursorAction().kind, "move");
-  const building = s.buildings.find((b) => b.f === 0 && b.type === "house");
+  const building = s.buildings.find((b) => b.f === 0 && b.type === "farm");
   building.hp -= 50;
   g.mouse.wx = building.x;
   g.mouse.wy = building.y;
@@ -1440,6 +1647,8 @@ test("cursor intent follows selection, lumber, mining, repair, attack, and block
   const enemy = g.addUnit(1, "sword", 1100, 800, true);
   g.mouse.wx = enemy.x;
   g.mouse.wy = enemy.y;
+  assert.equal(g.cursorAction().kind, "blocked", "workers cannot attack enemies");
+  s.selected = [soldier];
   assert.equal(g.cursorAction().kind, "attack");
   s.selected = [];
   assert.equal(g.cursorAction().kind, "select");

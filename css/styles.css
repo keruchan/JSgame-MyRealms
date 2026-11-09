@@ -70,12 +70,19 @@ button.small {
   flex-wrap: wrap;
 }
 .logo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: Georgia, serif;
   font-size: 22px;
   letter-spacing: 1.1px;
   color: #f1ddb1;
   margin-right: 13px;
   white-space: nowrap;
+}
+.logo-name {
+  line-height: 1.1;
+  text-align: left;
 }
 .stats {
   display: flex;
@@ -263,6 +270,9 @@ button.small {
 }
 .section:last-child {
   border-right: none;
+}
+.bottom > .section:last-child {
+  grid-column: 3;
 }
 .sectiontitle {
   font-size: 11px;

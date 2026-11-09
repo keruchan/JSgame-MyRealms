@@ -165,7 +165,7 @@ window.RealmfrontSprites = (() => {
       : u.job.kind === "gather"
         ? u.job.target.type === "ore"
           ? "mine"
-          : "chop"
+          : u.job.target.type === "field" ? "farm" : "chop"
         : null;
   }
   function drawWorkerTool(ctx, u, time) {
@@ -222,6 +222,10 @@ window.RealmfrontSprites = (() => {
       ctx.lineTo(-4, -16);
       ctx.lineTo(4, -11);
       ctx.stroke();
+    } else if (task === "farm") {
+      ctx.beginPath();
+      ctx.moveTo(2, -22); ctx.lineTo(17, -16); ctx.lineTo(14, -11); ctx.lineTo(0, -17); ctx.closePath();
+      ctx.fill(); ctx.stroke();
     } else {
       ctx.fillRect(3, -24, 17, 9);
       ctx.strokeRect(3, -24, 17, 9);

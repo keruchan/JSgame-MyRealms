@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>Realmfront — RTS Skirmish</title>
+    <title>King of the Conqueror's Realm — RTS Skirmish</title>
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/mobile.css" />
     <link rel="stylesheet" href="css/cheats.css" />
@@ -14,8 +14,9 @@
   <body>
     <div class="app">
       <header class="top">
-        <button id="realmfrontTitle" class="logo" type="button">
-          ⚔ REALMFRONT
+        <button id="gameTitle" class="logo" type="button" aria-label="King of the Conqueror's Realm">
+          <span aria-hidden="true">&#9876;</span>
+          <span class="logo-name">King of the<br />Conqueror's Realm</span>
         </button>
         <div class="stats">
           <div class="stat"><small>Gold</small><b id="gold">—</b></div>
@@ -145,7 +146,7 @@
             Ctrl+click repeat · Esc deselect<br />Ctrl+1–9 save group · 1–9 recall
           </div>
         </div>
-        <div class="section">
+        <div class="section" id="actionSection">
           <div class="sectiontitle" id="actionTitle">
             Construction & Recruitment
           </div>
@@ -205,7 +206,7 @@
       </p>
       <button id="cheatArmySlots" type="button">Add 10 army slots</button>
       <p class="hint">
-        Increase army capacity without houses, up to 100 units.
+        Add army capacity without a Town Hall upgrade, up to 100 units.
       </p>
       <p id="cheatStatus" class="cheat-status" role="status" aria-live="polite">
         Start a skirmish to use cheats.
@@ -213,7 +214,7 @@
     </section>
     <div id="startOverlay" class="overlay">
       <div class="modal">
-        <h1>Realmfront</h1>
+        <h1>King of the Conqueror's Realm</h1>
         <div class="game-subtitle">Kingdoms at War · Real-Time Skirmish</div>
         <p>
           Found a settlement, harvest resources, train an army, fortify your
@@ -227,10 +228,10 @@
               <option value="3" selected>3 Enemies — Standard</option>
               <option value="4">4 Enemies — Challenging</option>
               <option value="5">5 Enemies — Total War</option>
-              <option value="6">6 Enemies — Seven Kingdoms</option>
-              <option value="7">7 Enemies — Eight Kingdoms</option>
-              <option value="8">8 Enemies — Nine Kingdoms</option>
-              <option value="9">9 Enemies — Ten Kingdoms</option>
+              <option value="6">6 Enemies — Relentless</option>
+              <option value="7">7 Enemies — Onslaught</option>
+              <option value="8">8 Enemies — Chaos</option>
+              <option value="9">9 Enemies — Realmfall</option>
             </select></label
           ><label
             >Enemy Difficulty<select id="difficulty">
@@ -245,7 +246,7 @@
             🌾 <b>Economy:</b> directed gathering, repairs, tools research
           </div>
           <div>
-            🏰 <b>Construction:</b> barracks, archery ranges, houses, towers
+            🏰 <b>Construction:</b> resource houses, training buildings, towers
           </div>
           <div>
             ⚔️ <b>Warfare:</b> attack-move, counters, rally points, groups
@@ -315,7 +316,7 @@
         <span class="rotate-device" aria-hidden="true">↻ ▯</span>
         <h2 id="landscapeTitle">Rotate to landscape</h2>
         <p>
-          Realmfront needs a wider battlefield. Turn your phone or tablet
+          King of the Conqueror's Realm needs a wider battlefield. Turn your phone or tablet
           sideways to play.
         </p>
         <button id="rotateFullscreen" type="button" class="primary">

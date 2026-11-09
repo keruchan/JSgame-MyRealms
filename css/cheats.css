@@ -7,7 +7,7 @@
 .logo:hover:not(:disabled) {
   background: transparent;
 }
-#realmfrontTitle {
+#gameTitle {
   background: transparent;
   box-shadow: none;
   outline: none;

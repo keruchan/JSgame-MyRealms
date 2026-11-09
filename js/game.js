@@ -23,7 +23,7 @@
       "#d9e0e5",
     ];
 
-  const { defs, udefs, unitByBuilding, research, briefs } = window.RealmfrontData;
+  const { defs, udefs, unitByBuilding, research, briefs, combatRules, buildRules, economyRules } = window.RealmfrontData;
 
   // Shared game state
   let S = null,
@@ -164,6 +164,8 @@
       level: 1,
       invested: { ...d.cost },
       job: null,
+      defense: null,
+      defenseReturn: null,
       attackMove: false,
       facing: 1,
       actionTime: 0,
@@ -250,7 +252,6 @@
       addBuilding(i, "farm", f.x + 118 * side, f.y - 68, true);
       addBuilding(i, "lumber", f.x + 123 * side, f.y + 68, true);
       addBuilding(i, "mine", f.x, f.y + 143, true);
-      addBuilding(i, "house", f.x - 115 * side, f.y - 100, true);
       addBuilding(i, "barracks", f.x - 135 * side, f.y + 92, true);
       if (i === 0) {
         addUnit(i, "worker", f.x + 50, f.y - 116, true);
@@ -360,6 +361,7 @@
       .join(" · ") || "Free";
   function refreshActions() {
     if (!S) return;
+    document.getElementById("attackMove").disabled = !canCommand() || !S.selected.some((u) => u.f === 0 && u.hp > 0 && u.size === undefined && u.type !== "worker");
     if (S.catalogPreview?.selection !== S.selected.map((o) => o.id).join(",")) S.catalogPreview = null;
     let sel = S.selected.filter((o) => o.hp > 0),
       one = sel.length === 1 ? sel[0] : null,
@@ -368,6 +370,11 @@
           ? one
           : null,
       options = [];
+    const detailsOnly = !S.placement && sel.length > 0 &&
+      sel.every((o) => o.size !== undefined) && !unitByBuilding[building?.type];
+    document.getElementById("selectionPanel").classList.toggle("building-info-only", detailsOnly);
+    document.getElementById("actionSection").classList.toggle("hidden", detailsOnly);
+    document.getElementById("mobileActionHost").classList.toggle("hidden", detailsOnly);
     let title = "Construction & Recruitment";
     if (building && unitByBuilding[building.type]) {
       title = `${defs[building.type].name} · Training`;
@@ -380,34 +387,11 @@
           details: udefs[type].desc,
           disabled: !!trainingBlockReason(building, type),
         });
-    } else if (
-      building &&
-      (building.type === "tower" || building.type === "fortress")
-    ) {
-      title = "Defensive Building";
-      options.push({
-        name: "Upgrade Defense",
-        catalog: { kind: "upgrade", type: building.type, source: building.id },
-        brief: "Improve defenses",
-        details: "Improves this building's health, attack, range, and firing speed.",
-        description: costText({
-          gold: 100 * building.level,
-          wood: 80 * building.level,
-        }),
-        run: () => upgradeTower(building),
-        disabled:
-          building.level >= 3 ||
-          !canPay(S.factions[0], {
-            gold: 100 * building.level,
-            wood: 80 * building.level,
-          }),
-      });
-    } else {
+    } else if (!detailsOnly) {
       let types = [
         "farm",
         "lumber",
         "mine",
-        "house",
         "barracks",
         "range",
         "stable",
@@ -534,7 +518,7 @@
     const unit = item.kind === "unit", tech = item.kind === "research", d = unit ? udefs[item.type] : tech ? research[item.type] : defs[item.type];
     if (!d) return "";
     const cost = unit && b ? trainingCost(b, item.type) : tech ? researchCost(item.type, S.factions[0].tech[item.type]) : item.kind === "upgrade" && b ? upgradeCost(b) : d.cost;
-    const stats = unit ? [["Health", d.hp], ["Damage", d.damage], ["Range", d.range], ["Cooldown", `${d.cool}s`], ["Speed", `${d.speed}/s`], ["Armor", `${Math.round((d.armor || 0) * 100)}%`], ["Training", `${d.time}s`], ["Pop", b?.workers.length && item.type !== "worker" ? "Reuse" : "+1"]]
+    const stats = unit ? (item.type === "worker" ? [["Health", d.hp], ["Speed", `${d.speed}/s`], ["Training", `${d.time}s`], ["Pop", "+1"]] : [["Health", d.hp], ["Damage", d.damage], ["Range", d.range], ["Cooldown", `${d.cool}s`], ["Speed", `${d.speed}/s`], ["Armor", `${Math.round((d.armor || 0) * 100)}%`], ["Training", `${d.time}s`], ["Pop", b?.workers.length ? "Reuse" : "+1"]])
       : tech ? [["Level", `${S.factions[0].tech[item.type]}/3`], ["Time", `${d.time}s`]]
       : [["Health", d.hp],
         ...(d.rate ? [["Income", Object.values(d.rate).map((rate) => `${rate}/s`).join(", ")]] : []),
@@ -542,7 +526,8 @@
         ...(d.workerSlots ? [["Workers", d.workerSlots]] : [])];
     const blocked = unit ? trainingBlockReason(b, item.type) : "";
     const trainButton = unit ? `<button id="catalogTrain" class="catalog-train" type="button" aria-label="Train ${d.name}"${blocked ? " disabled" : ""}>Train</button>` : "";
-    return `<div class="catalog-detail"><div class="catalog-heading"><canvas width="64" height="64" class="catalog-portrait" aria-hidden="true"></canvas><h3>${placing ? "Build " : item.kind === "upgrade" ? "Upgrade " : ""}${d.name}</h3>${trainButton}</div><p class="info catalog-description">${d.desc}</p><div class="catalog-cost">${costText(cost)}</div><dl class="catalog-stats">${stats.map(([label, value]) => `<div><dt>${label}:</dt><dd>${value}</dd></div>`).join("")}</dl>${blocked ? `<p class="hint">${blocked}</p>` : ""}${placing ? '<p class="hint">Tap land to preview, then Build here to confirm.</p>' : b ? `<p class="hint">${defs[b.type].name} · Queue ${b.train.length}/5${unit && b.workers.length && item.type !== "worker" ? " · Retrains a waiting worker" : ""}</p><button id="catalogBuildingInfo" class="small" type="button">Building info &amp; commands</button>` : '<p class="hint">Choose a card to start placing a building.</p>'}</div>`;
+    const placementHint = `Friendly worker required within ${buildRules.workerRadius} units. ${window.RealmfrontMobile?.touch ? "Tap land to preview; Build here confirms." : "Click clear land to build."}`;
+    return `<div class="catalog-detail"><div class="catalog-heading"><canvas width="64" height="64" class="catalog-portrait" aria-hidden="true"></canvas><h3>${placing ? "Build " : item.kind === "upgrade" ? "Upgrade " : ""}${d.name}</h3>${trainButton}</div><p class="info catalog-description">${d.desc}</p><div class="catalog-cost">${costText(cost)}</div><dl class="catalog-stats">${stats.map(([label, value]) => `<div><dt>${label}:</dt><dd>${value}</dd></div>`).join("")}</dl>${blocked ? `<p class="hint">${blocked}</p>` : ""}${placing ? `<p class="hint">${placementHint}</p>` : b ? `<p class="hint">${defs[b.type].name} · Queue ${b.train.length}/5${unit && b.workers.length && item.type !== "worker" ? " · Retrains a waiting worker" : ""}</p><button id="catalogBuildingInfo" class="small" type="button">Building info &amp; commands</button>` : '<p class="hint">Choose a card to start placing a building.</p>'}</div>`;
   }
   // Keep live panel nodes (and an in-progress tap/scroll) through HUD updates.
   function setDetails(box, html) {
@@ -596,7 +581,7 @@
       return;
     }
     if (!arr.length) {
-      setDetails(box, '<div class="muted">Tap/click one unit to select it. Double a fighter for all fighters; triple to include workers. Double a worker for all workers.</div>');
+      setDetails(box, '<div class="muted">Click/tap once for one unit. Double a fighter for its type; triple for all fighters. Multiple clicks on a worker select workers only.</div>');
       return;
     }
     const groups = new Map();
@@ -616,7 +601,7 @@
         html += `<canvas width="64" height="64" class="selection-building-icon" data-building-icon="${o.type}" role="img" aria-label="${d.name} icon"></canvas>`;
       html += `<h3>${items.length > 1 ? items.length + " x " : ""}${d.name}</h3></div><p class="info selection-description">${d.desc}</p>`;
       if (items.length === 1) {
-        html += `<div class="info">Level ${o.level || 1}/3 · Health ${Math.ceil(o.hp)} / ${o.maxHp}<div class="bar"><span style="width:${clamp((o.hp / o.maxHp) * 100, 0, 100)}%"></span></div>`;
+        html += `<div class="info">${o.type === "worker" ? "" : `Level ${o.level || 1}/3 · `}Health ${Math.ceil(o.hp)} / ${o.maxHp}<div class="bar"><span style="width:${clamp((o.hp / o.maxHp) * 100, 0, 100)}%"></span></div>`;
         if (isB) {
           if (d.cap) html += `<br>Population capacity: +${capacity(o)}`;
           if (d.rate)
@@ -629,11 +614,16 @@
                   "/s",
               )
               .join(", ")}`;
-          if (workerSlots(o)) html += `<br>Workers inside: ${occupiedSlots(o)}/${workerSlots(o)}${d.rate ? " · One worker adds 1/s before bonuses." : " · Select a unit card to retrain a waiting worker."}`;
+          if (workerSlots(o)) html += `<br>Workers inside: ${occupiedSlots(o)}/${workerSlots(o)} · Select a unit card to retrain a waiting worker.`;
+          if (d.rate) html += `<br>Worker output: ${o.level}/s each on matching resources within ${economyRules.houseRadius} units. Highest nearby house level applies; bonuses do not stack. Workers stay outside.`;
+          if (o.type === "hall") html += `<br>Army capacity by level: ${economyRules.hallCapacity.join(" / ")}. Recruit workers here.`;
           if (o.train.length)
             html += `<br>Training (${o.train.length}/5): ${o.train.map((v, i) => udefs[v].name + (queueWorker(o, i) ? " (worker)" : "")).join(", ")}`;
-        } else
+        } else if (o.type === "worker")
+          html += `<br>Noncombat worker · Speed ${Math.round(unitSpeed(o))}`;
+        else
           html += `<br>Damage ${Math.round(combatDamage(o, {}))} · Range ${d.range}<br>Speed ${Math.round(unitSpeed(o))} · Armor ${Math.round(unitArmor(o) * 100)}%`;
+        if (o.defense && o.type !== "worker") html += "<br>Order: Local defense";
         if (o.type === "worker") {
           const task =
             o.job?.kind === "repair"
@@ -643,9 +633,11 @@
               : o.job?.kind === "gather"
                 ? o.job.target.type === "tree"
                   ? "Chopping lumber"
-                  : "Mining gold"
+                  : o.job.target.type === "field" ? "Farming" : "Mining gold"
                 : "Idle";
           html += `<br>Task: ${o.job && o.actionTime <= 0 ? "Moving to work - " : ""}${task}`;
+          if (o.job?.kind === "gather") html += `<br>Gathering: ${workerGatherRate(o, o.job.target)}/s · ${resourceForNode(o.job.target)}`;
+          html += "<br>Workers cannot be upgraded. Retrain in a military building, then upgrade the fighter.";
         }
         html += "</div>";
       } else {
@@ -657,23 +649,24 @@
             return count ? `${count} at level ${level}` : "";
           })
           .filter(Boolean);
-        html += `<div class="info">${levels.join(" · ")}</div>`;
+        html += `<div class="info">${o.type === "worker" ? "Workers do not level up; resource-house levels improve their gathering." : levels.join(" · ")}</div>`;
       }
       if (isB) html += '</div>';
     }
     const owned = arr.filter((o) => o.f === 0),
-      upgradable = owned.filter((o) => (o.level || 1) < 3),
+      upgradable = owned.filter((o) => o.type !== "worker" && (o.level || 1) < 3),
       sellable = owned.filter((o) => o.type !== "hall");
     if (owned.length) {
       html += '<div class="divider"></div>';
-      html += `<div class="info">Upgrade: ${upgradable.length ? costText(totalCosts(upgradable.map(upgradeCost))) : "Maximum level reached"}</div>`;
+      if (owned.some((o) => o.type !== "worker")) html += `<div class="info">Upgrade: ${upgradable.length ? costText(totalCosts(upgradable.map(upgradeCost))) : "Maximum level reached"}</div>`;
       html +=
         '<div class="hint">' +
-        (owned.some((o) => o.size === undefined)
-          ? "Units gain health and damage; workers also gather faster. "
+        (owned.some((o) => o.size === undefined && o.type !== "worker")
+          ? "Fighters gain health and damage. "
           : "") +
+        (owned.some((o) => o.size === undefined && o.type === "worker") ? "Resource houses improve worker output; retrain workers before upgrading them as fighters. " : "") +
         (owned.some((o) => o.size !== undefined)
-          ? "Buildings gain health, income, training speed, population capacity or defense power. "
+          ? "Buildings gain health, nearby worker output, training speed, army capacity or defense power. "
           : "") +
         "Upgrades affect affordable eligible selections.</div>";
       if (sellable.length)
@@ -695,7 +688,7 @@
       b.disabled = disabled || !canCommand();
       b.onclick = fn;
     };
-    make(
+    if (owned.some((o) => o.type !== "worker")) make(
       window.RealmfrontMobile?.touch ? "Upgrade" : "Upgrade [U]",
       upgradeSelected,
       !upgradable.some((o) => canPay(S.factions[0], upgradeCost(o))),
@@ -736,9 +729,10 @@
         S.placement = null;
         if (window.RealmfrontMobile?.touch) document.body.classList.remove("panel-open", "map-open", "actions-open", "rail-info", "rail-build", "rail-roster");
         updateUI();
-        message("Choose a friendly resource or military training building");
+        message("Choose a friendly military training building");
       });
-      make(window.RealmfrontMobile?.touch ? "Attack-move" : "Attack-move [A]", armAttackMove);
+      if (owned.some((o) => o.size === undefined && o.type !== "worker"))
+        make(window.RealmfrontMobile?.touch ? "Attack-move" : "Attack-move [A]", armAttackMove);
       make(window.RealmfrontMobile?.touch ? "Stop" : "Stop [S]", stopSelected);
     }
     const staffed = owned.filter((o) => o.size !== undefined && o.workers.length);
@@ -763,6 +757,7 @@
   }
   function orderEnter(u, b) {
     if (!canEnter(u, b)) return false;
+    endDefense(u, false);
     u.job = { kind: "enter", target: b };
     u.target = u.move = null;
     u.route = null;
@@ -772,6 +767,7 @@
   }
   function enterBuilding(u, b) {
     if (!canEnter(u, b) || !S.units.includes(u) || dist(u, b) > b.size * 0.6 + 13) return false;
+    endDefense(u, false);
     const wasSelected = S.selected.includes(u);
     u.job = u.target = u.move = u.route = null;
     u.hold = true;
@@ -793,6 +789,7 @@
     return true;
   }
   function releaseWorker(b, worker) {
+    endDefense(worker, false);
     b.workers = b.workers.filter((u) => u !== worker);
     let exit;
     for (let i = 0; i < 20; i++) {
@@ -814,10 +811,17 @@
     b.progress = 0;
   }
   function buildingIncome(b, resource) {
-    const base = defs[b.type].rate?.[resource] || 0;
-    const bonus = b.workers.reduce((sum, u) => sum + 1 + ((u.level || 1) - 1) * 0.2, 0);
-    return base + (base ? bonus * buildingMultiplier(b) * (1 + S.factions[b.f].tech.economy * 0.25) *
-      (b.f === 0 ? 1 : S.difficulty) : 0);
+    return defs[b.type].rate?.[resource] || 0;
+  }
+  const resourceForNode = (node) => node.type === "ore" ? "gold" : node.type === "field" ? "food" : "wood";
+  function workerGatherRate(u, node) {
+    const resource = resourceForNode(node);
+    let level = 1;
+    for (const b of S.buildings) {
+      if (b.f === u.f && b.hp > 0 && defs[b.type].rate?.[resource] && dist(b, node) <= economyRules.houseRadius)
+        level = Math.max(level, b.level || 1);
+    }
+    return level;
   }
   function trainingCost(b, type) {
     if (!b.workers.length || type === "worker") return { ...udefs[type].cost };
@@ -840,7 +844,7 @@
     if (!canCommand()) return S?.paused ? "Resume the game to train." : "Training is unavailable.";
     if (b.train.length >= 5) return "Training queue is full (5 units).";
     if (!(b.workers.length && type !== "worker") && S.factions[0].pop + pendingPop(0) >= Math.min(100, S.factions[0].cap))
-      return "Population limit reached. Build Houses.";
+      return "Population limit reached. Upgrade your Town Hall (20 / 60 / 100).";
     if (!canPay(S.factions[0], trainingCost(b, type))) return "Not enough resources.";
     return "";
   }
@@ -867,11 +871,9 @@
     return result;
   }
   function capacity(b) {
+    if (b.type === "hall") return economyRules.hallCapacity[(b.level || 1) - 1] || 100;
     const base = defs[b.type]?.cap || 0;
     return base ? base + Math.ceil(base / 2) * ((b.level || 1) - 1) : 0;
-  }
-  function buildingMultiplier(b) {
-    return 1 + ((b.level || 1) - 1) * 0.25;
   }
   function unitSpeed(u) {
     return udefs[u.type].speed * (1 + ((u.level || 1) - 1) * 0.05);
@@ -895,7 +897,7 @@
     );
   }
   function upgradeEntity(o) {
-    if (!canCommand() || o.f !== 0 || o.hp <= 0 || (o.level || 1) >= 3)
+    if (!canCommand() || o.f !== 0 || o.hp <= 0 || o.type === "worker" || (o.level || 1) >= 3)
       return false;
     const cost = upgradeCost(o);
     if (!pay(S.factions[0], cost)) return false;
@@ -909,11 +911,15 @@
         : Math.round(d.hp * (1 + (o.level - 1) * 0.25));
     o.hp += o.maxHp - oldMax;
     o.invested = totalCosts([o.invested || d.cost, cost]);
-    if (o.size !== undefined) S.factions[0].cap += capacity(o) - oldCap;
+    if (o.size !== undefined) S.factions[0].cap = Math.min(100, S.factions[0].cap + capacity(o) - oldCap);
     return true;
   }
   function upgradeSelected() {
     if (!canCommand()) return;
+    if (S.selected.length && S.selected.every((o) => o.f === 0 && o.type === "worker")) {
+      message("Workers cannot upgrade. Retrain in a military building, then upgrade the fighter.");
+      return;
+    }
     let count = 0;
     for (const o of S.selected) if (upgradeEntity(o)) count++;
     message(
@@ -923,13 +929,6 @@
     );
     refreshActions();
     refreshDetails();
-  }
-  function upgradeTower(b) {
-    if (upgradeEntity(b)) {
-      message("Defense upgraded");
-      refreshActions();
-      refreshDetails();
-    }
   }
   function sellValue(o) {
     return Object.fromEntries(
@@ -994,8 +993,9 @@
     lastSelectionClick = { id: o.id, time: now, count };
     if (count === 1) S.selected = [o];
     else if (o.size !== undefined) { selectSameType(o); return; }
+    else if (o.type !== "worker" && count === 2) { selectSameType(o); return; }
     else S.selected = S.units.filter((u) => u.hp > 0 && u.f === o.f &&
-      (o.type === "worker" ? u.type === "worker" : count >= 3 || u.type !== "worker"));
+      (o.type === "worker" ? u.type === "worker" : u.type !== "worker"));
     refreshActions();
     refreshDetails();
   }
@@ -1005,7 +1005,7 @@
       px = Math.round(x / 12) * 12,
       py = Math.round(y / 12) * 12;
     if (!validPlace(type, px, py) || !canPay(S.factions[0], defs[type].cost)) {
-      message("Cannot build here or insufficient resources");
+      message(hasBuilder(px, py) ? "Cannot build here or insufficient resources" : `Move a friendly worker within ${buildRules.workerRadius} units of this site`);
       return null;
     }
     const b = addBuilding(0, type, px, py);
@@ -1022,9 +1022,12 @@
     refreshDetails();
     return b;
   }
+  function hasBuilder(x, y, owner = 0) {
+    return S.units.some((u) => u.hp > 0 && u.f === owner && u.type === "worker" &&
+      (u.x - x) ** 2 + (u.y - y) ** 2 <= buildRules.workerRadius ** 2);
+  }
   function validPlace(type, x, y, owner = 0) {
-    let d = defs[type],
-      f = S.factions[owner];
+    const d = defs[type];
     return (
       x > d.size &&
       y > d.size &&
@@ -1044,7 +1047,7 @@
           (b) =>
             Math.hypot(b.x - x, b.y - y) > d.size * 0.6 + b.size * 0.6 + 40,
         ) &&
-      Math.hypot(x - f.x, y - f.y) < 850
+      hasBuilder(x, y, owner)
     );
   }
 
@@ -1065,19 +1068,20 @@
     return { x: o.x, y: o.y };
   }
   function seekTarget(u) {
+    if (u.type === "worker") { u.target = null; return; }
     if (u.hold && u.move) return;
     let d = udefs[u.type];
     if (d.kind === "healer") {
       let allies = S.units.filter(
         (v) => v.f === u.f && v.hp > 0 && v.hp < v.maxHp * 0.96 && v !== u,
       );
-      u.target = nearest(allies, u, 350);
+      u.target = nearest(allies, u, combatRules.detectionRange);
       return;
     }
     let enemies = S.units.filter((v) => v.f !== u.f && v.hp > 0),
       buildings = S.buildings.filter((v) => v.f !== u.f && v.hp > 0);
-    let t = nearest(enemies, u, u.f === 0 ? 205 : 260);
-    if (!t) t = nearest(buildings, u, u.f === 0 ? 150 : 210);
+    let t = nearest(enemies, u, combatRules.detectionRange);
+    if (!t) t = nearest(buildings, u, combatRules.detectionRange);
     u.target = t;
     if (!t && !u.move && !u.hold && u.f !== 0) {
       let f = S.factions[u.f];
@@ -1143,10 +1147,81 @@
     u.movedAt = S.time;
     return false;
   }
-  function hit(t, dmg, attacker) {
+  const weaponReach = (u, t) => udefs[u.type].range + (t.size || udefs[t.type]?.radius || 10) * 0.42;
+  function endDefense(u, restore = true) {
+    if (!restore) u.defenseReturn = null;
+    if (!u.defense) return;
+    const { resume: saved, attacker } = u.defense;
+    u.defense = null;
+    u.target = null;
+    u.route = null;
+    u.think = 0;
+    if (restore) {
+      u.move = saved.move;
+      u.job = saved.job;
+      u.hold = saved.hold;
+      u.attackMove = saved.attackMove;
+      u.defenseReturn = saved.returning;
+      if (saved.target?.hp > 0 && saved.target !== attacker) u.target = saved.target;
+      if (!u.move && !u.job && !u.target && dist(u, saved.origin) > 8) {
+        u.move = { ...saved.origin };
+        u.hold = true;
+        u.defenseReturn = { hold: saved.hold };
+      }
+    }
+  }
+  function beginDefense(u, attacker, victim, target = attacker) {
+    if (u.defense?.attacker === attacker && u.target === target) return;
+    const resume = u.defense?.resume || { move: u.move, target: u.target, job: u.job, hold: u.hold, attackMove: u.attackMove,
+      origin: { x: u.x, y: u.y }, returning: u.defenseReturn };
+    u.defense = { attacker, anchor: { x: victim.x, y: victim.y }, resume };
+    u.target = target;
+    u.move = u.job = u.route = null;
+    u.defenseReturn = null;
+    u.hold = u.attackMove = false;
+    u.think = 0;
+  }
+  function alertDefenders(victim, attacker) {
+    if (!attacker || attacker.hp <= 0 || attacker.f === victim.f || S.ended || dist(victim, attacker) > combatRules.defenseLeash) return;
+    const radiusSquared = combatRules.defenseRadius ** 2;
+    for (const u of S.units) {
+      if (u.hp <= 0 || u.type === "worker" || u.f !== victim.f || (u.x - victim.x) ** 2 + (u.y - victim.y) ** 2 > radiusSquared) continue;
+      if (udefs[u.type].kind === "healer") {
+        const patient = victim.size === undefined && victim.hp > 0 && victim.hp < victim.maxHp ? victim : nearest(
+          S.units.filter((ally) => ally.f === u.f && ally.hp > 0 && ally.hp < ally.maxHp), victim, combatRules.defenseRadius);
+        if (patient && patient !== u) beginDefense(u, attacker, victim, patient);
+        continue;
+      }
+      // Keep fighting a live enemy already within weapon reach.
+      if (u.target?.hp > 0 && u.target.f !== u.f && dist(u, u.target) <= weaponReach(u, u.target)) continue;
+      beginDefense(u, attacker, victim);
+    }
+    for (const b of S.buildings) {
+      if (b.hp <= 0 || b.f !== victim.f || !defs[b.type].damage || dist(b, victim) > combatRules.defenseRadius) continue;
+      if (dist(b, attacker) <= defs[b.type].range + (b.level - 1) * 25) b.target = attacker;
+    }
+  }
+  function updateDefense(u) {
+    if (u.type === "worker") { endDefense(u); return false; }
+    const defense = u.defense;
+    if (!defense) return false;
+    const attacker = defense.attacker;
+    if (attacker.hp <= 0 || attacker.f === u.f || dist(attacker, defense.anchor) > combatRules.defenseLeash) {
+      endDefense(u);
+      return false;
+    }
+    if (udefs[u.type].kind === "healer" && (!u.target || u.target.hp <= 0 || u.target.hp >= u.target.maxHp)) {
+      endDefense(u);
+      return false;
+    }
+    if (udefs[u.type].kind !== "healer") u.target = attacker;
+    return true;
+  }
+  function hit(t, dmg, attacker, source = null) {
     if (!t || t.hp <= 0) return;
     let resistance = t.size === undefined ? unitArmor(t) : 0;
     t.hp -= dmg * (1 - resistance);
+    if (dmg > 0) alertDefenders(t, source);
     if (t.hp <= 0) {
       t.hp = 0;
       for (let i = 0; i < 7; i++)
@@ -1185,14 +1260,16 @@
       damage,
       kind,
       f,
+      source: from,
       speed: kind === "siege" ? 195 : kind === "healer" ? 270 : 390,
       r: kind === "siege" ? 7 : 3,
     });
   }
   function attack(u, t, dt) {
     const d = udefs[u.type];
+    if (u.type === "worker") { u.target = null; return; }
     if (!t || t.hp <= 0) return;
-    let r = d.range + (t.size || udefs[t.type]?.radius || 10) * 0.42,
+    let r = weaponReach(u, t),
       ds = dist(u, t);
     if (ds > r) {
       if (!u.hold) moveToward(u, t.x, t.y, dt, Math.max(6, r * 0.8));
@@ -1204,8 +1281,8 @@
       u.actionTime = u.actionDuration;
       u.facing = t.x < u.x ? -1 : 1;
       const damage = combatDamage(u, t);
-      if (d.kind === "melee" || d.kind === "tank" || d.kind === "worker")
-        hit(t, damage, u.f);
+      if (d.kind === "melee" || d.kind === "tank")
+        hit(t, damage, u.f, u);
       else if (d.kind === "healer") {
         t.hp = Math.min(t.maxHp, t.hp + 27 * (1 + ((u.level || 1) - 1) * 0.2));
         S.particles.push({
@@ -1228,11 +1305,13 @@
       u.attackTimer -= dt;
       u.actionTime = Math.max(0, u.actionTime - dt);
       u.think -= dt;
+      if (u.type === "worker") { u.target = null; u.attackMove = false; }
+      const defending = updateDefense(u);
       if (u.job && simulateWorkerJob(u, dt)) continue;
-      if (u.think <= 0) {
+      if (!defending && u.think <= 0) {
         u.think = rand(0.26, 0.5);
         if (!u.move || u.attackMove || u.f !== 0) {
-          if (!u.target || u.target.hp <= 0 || dist(u, u.target) > 550)
+          if (!u.target || u.target.hp <= 0 || dist(u, u.target) > combatRules.pursuitRange)
             seekTarget(u);
         } else u.target = null;
       }
@@ -1250,6 +1329,11 @@
         if (moveToward(u, u.move.x, u.move.y, dt, 8)) {
           u.move = null;
           u.attackMove = false;
+          if (u.defenseReturn) {
+            u.hold = u.defenseReturn.hold;
+            u.defenseReturn = null;
+            u.think = 0;
+          }
         }
       } else if (u.type === "worker" && !u.hold) {
         const node = nearest(
@@ -1352,12 +1436,14 @@
       if (d.damage) {
         b.attackTimer -= dt;
         if (b.attackTimer <= 0) {
-          let target = nearest(
+          const range = d.range + (b.level - 1) * 25;
+          let target = b.target?.hp > 0 && b.target.f !== b.f && dist(b, b.target) <= range ? b.target : nearest(
             S.units.filter((u) => u.hp > 0 && u.f !== b.f),
             b,
-            d.range + (b.level - 1) * 25,
+            combatRules.detectionRange,
           );
-          if (target) {
+          b.target = target;
+          if (target && dist(b, target) <= range) {
             b.attackTimer = d.cool / (1 + 0.15 * (b.level - 1));
             shoot(
               b,
@@ -1387,7 +1473,7 @@
         if (p.kind === "siege") {
           for (let v of [...S.units, ...S.buildings])
             if (v.hp > 0 && v.f !== p.f && dist(v, p.to) < 70)
-              hit(v, p.damage * (v === p.to ? 1 : 0.53), p.f);
+              hit(v, p.damage * (v === p.to ? 1 : 0.53), p.f, p.source);
           for (let i = 0; i < 10; i++)
             S.particles.push({
               x: p.to.x,
@@ -1398,7 +1484,7 @@
               color: "#d7b477",
               r: rand(2, 5),
             });
-        } else hit(p.to, p.damage, p.f);
+        } else hit(p.to, p.damage, p.f, p.source);
         p.life = -1;
       } else {
         p.x += (dx / ds) * step;
@@ -1418,11 +1504,14 @@
   function aiBuild(f, type) {
     let d = defs[type];
     if (!canPay(f, d.cost)) return false;
+    const workers = S.units.filter((u) => u.f === f.id && u.type === "worker" && u.hp > 0);
+    if (!workers.length) return false;
     for (let i = 0; i < 26; i++) {
+      const worker = workers[i % workers.length];
       let t = rand(0, Math.PI * 2),
-        r = rand(140, Math.min(735, 330 + f.expansions * 60)),
-        x = clamp(f.x + Math.cos(t) * r, 80, W - 80),
-        y = clamp(f.y + Math.sin(t) * r, 80, H - 80);
+        r = rand(100, buildRules.workerRadius),
+        x = clamp(worker.x + Math.cos(t) * r, 80, W - 80),
+        y = clamp(worker.y + Math.sin(t) * r, 80, H - 80);
       if (validPlace(type, x, y, f.id)) {
         addBuilding(f.id, type, x, y);
         f.expansions++;
@@ -1456,7 +1545,7 @@
   }
   function aiRaid(f) {
     let troops = S.units.filter(
-      (u) => u.f === f.id && u.hp > 0 && u.type !== "worker",
+      (u) => u.f === f.id && u.hp > 0 && u.type !== "worker" && !u.defense && !u.defenseReturn,
     );
     if (troops.length < 4) return;
     let enemies = S.factions.filter(
@@ -1503,13 +1592,16 @@
           f.alive = false;
           continue;
         }
-        for (const b of S.buildings.filter((b) => b.f === f.id && b.hp > 0 && defs[b.type].rate)
-          .sort((a, b) => ["mine", "lumber", "farm"].indexOf(a.type) - ["mine", "lumber", "farm"].indexOf(b.type))) {
-          const worker = nearest(S.units.filter((u) => u.f === f.id && u.hp > 0 && u.type === "worker" && u.job?.kind !== "enter" && canEnter(u, b)), b);
-          if (worker) orderEnter(worker, b);
+        const hall = S.buildings.find((b) => b.f === f.id && b.type === "hall" && b.hp > 0);
+        if (hall.level < 3 && f.cap - f.pop - pendingPop(f.id) < 5) {
+          if (pay(f, upgradeCost(hall))) {
+            const oldCap = capacity(hall), oldMax = hall.maxHp;
+            hall.level++;
+            hall.maxHp = Math.round(defs.hall.hp * (1 + (hall.level - 1) * .25));
+            hall.hp += hall.maxHp - oldMax;
+            f.cap += capacity(hall) - oldCap;
+          }
         }
-        if (f.cap < 100 && f.cap - f.pop - pendingPop(f.id) < 5)
-          aiBuild(f, "house");
         else if (counts.farm < 2 + S.time / 280) aiBuild(f, "farm");
         else if (counts.lumber < 2 + S.time / 330) aiBuild(f, "lumber");
         else if (counts.mine < 2 + S.time / 360) aiBuild(f, "mine");
@@ -1522,8 +1614,15 @@
         else if (Math.random() < 0.2)
           aiBuild(
             f,
-            ["house", "farm", "mine", "tower"][Math.floor(rand(0, 4))],
+            ["lumber", "farm", "mine", "tower"][Math.floor(rand(0, 4))],
           );
+        const resourceHouse = S.buildings.find((b) => b.f === f.id && b.hp > 0 && defs[b.type].rate && b.level < 3);
+        if (resourceHouse && S.time > 90 && pay(f, upgradeCost(resourceHouse))) {
+          const oldMax = resourceHouse.maxHp;
+          resourceHouse.level++;
+          resourceHouse.maxHp = Math.round(defs[resourceHouse.type].hp * (1 + (resourceHouse.level - 1) * .25));
+          resourceHouse.hp += resourceHouse.maxHp - oldMax;
+        }
         for (let i = 0; i < Math.ceil(S.difficulty * 2); i++) aiTrain(f);
       }
       if (f.raidTimer <= 0) {
@@ -1641,6 +1740,13 @@
         circle(n.x, n.y, n.r);
         ctx.fillStyle = "#6c9965";
         circle(n.x - 6, n.y - 5, n.r * 0.58);
+      } else if (n.type === "field") {
+        ctx.fillStyle = n.amount > 0 ? "#b29245" : "#745236";
+        ctx.fillRect(n.x - n.r, n.y - n.r * .6, n.r * 2, n.r * 1.2);
+        ctx.strokeStyle = "#d8c477";
+        for (let row = -2; row <= 2; row++) {
+          ctx.beginPath(); ctx.moveTo(n.x - n.r + 5, n.y + row * 7); ctx.lineTo(n.x + n.r - 5, n.y + row * 7); ctx.stroke();
+        }
       } else {
         ctx.fillStyle = "#626b6b";
         poly(n.x, n.y, n.r, 6, 0);
@@ -1672,9 +1778,18 @@
     if (S.placement) {
       let type = S.placement,
         d = defs[type],
-        preview = window.RealmfrontMobile?.touch && touchPlacement ? touchPlacement : { x: mouse.wx, y: mouse.wy },
+        preview = window.RealmfrontMobile?.touch && touchPlacement ? touchPlacement : { x: Math.round(mouse.wx / 12) * 12, y: Math.round(mouse.wy / 12) * 12 },
         valid =
           validPlace(type, preview.x, preview.y) && canPay(S.factions[0], d.cost);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+      ctx.strokeStyle = "#a5db9c66"; ctx.fillStyle = "#8bd5a40a"; ctx.lineWidth = 2;
+      for (const u of S.units) {
+        const r = buildRules.workerRadius;
+        if (u.hp <= 0 || u.f !== 0 || u.type !== "worker" || u.x + r < left || u.x - r > right || u.y + r < top || u.y - r > bottom) continue;
+        ctx.beginPath(); ctx.arc(u.x, u.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
       ctx.save();
       ctx.globalAlpha = 0.6;
       window.RealmfrontBuildings?.draw(
@@ -1803,9 +1918,7 @@
       } else if (b.type === "lumber") {
         ctx.fillStyle = "#795437";
         for (let i = -1; i <= 1; i++) ctx.fillRect(x - 16, y + i * 9, 33, 6);
-      } else if (b.type === "house") {
-        ctx.fillStyle = "#765c50";
-        poly(x, y - s * 0.18, s * 0.49, 3, -Math.PI / 2);
+
       } else if (b.type === "tower" || b.type === "fortress") {
         ctx.fillStyle = "#4f6566";
         circle(x, y, s * 0.29);
@@ -1832,6 +1945,11 @@
       }
     }
     if (selected) {
+      if (d.rate) {
+        ctx.strokeStyle = "#e4d29a66";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x, y, economyRules.houseRadius, 0, Math.PI * 2); ctx.stroke();
+      }
       ctx.strokeStyle = "#f2e8b7";
       ctx.lineWidth = 3;
       ctx.strokeRect(x - s / 2 - 8, y - s / 2 - 8, s + 16, s + 16);
@@ -1948,7 +2066,7 @@
     for (const n of S.nodes) {
       if (n.amount <= 0) continue;
       const p = world.mapPoint(n.x, n.y);
-      mc.fillStyle = n.type === "ore" ? "#b9a076" : "#497d53";
+      mc.fillStyle = n.type === "ore" ? "#b9a076" : n.type === "field" ? "#d6b15d" : "#497d53";
       mc.fillRect(p.x, p.y, 2, 2);
     }
     for (const b of S.buildings) {
@@ -2163,7 +2281,7 @@
         ? { kind: "build", label: `Place ${defs[S.placement].name}` }
         : {
             kind: "blocked",
-            label: "Cannot build here or insufficient resources",
+            label: hasBuilder(px, py) ? "Cannot build here or insufficient resources" : `Worker needed within ${buildRules.workerRadius} units`,
           };
     }
     if (!world.contains(x, y))
@@ -2172,7 +2290,7 @@
       const building = pick(x, y);
       const possible = S.selected.some((u) => u.f === 0 && u.size === undefined && canEnter(u, building));
       return possible ? { kind: building.type === "lumber" ? "chop" : building.type === "mine" ? "mine" : "move",
-        label: `Click to enter ${defs[building.type].name}` } : { kind: "blocked", label: "Choose a friendly resource or military building with worker spaces" };
+        label: `Click to enter ${defs[building.type].name}` } : { kind: "blocked", label: "Choose a friendly military training building with worker spaces" };
     }
     if (S.command)
       return {
@@ -2180,17 +2298,18 @@
         label:
           S.command === "attack"
             ? "Click to attack-move"
-            : S.command === "enter" ? "Click a friendly resource or military building to enter"
+            : S.command === "enter" ? "Click a friendly military training building to enter"
             : "Click to set rally point",
       };
     const owned = S.selected.filter((o) => o.f === 0 && o.hp > 0),
       troops = owned.filter((o) => o.size === undefined),
+      fighters = troops.filter((u) => u.type !== "worker"),
       workers = troops.filter((u) => u.type === "worker"),
       target = pick(x, y);
     if (target?.f !== undefined && target.f !== 0)
-      return troops.length
+      return fighters.length
         ? { kind: "attack", label: "Right-click: Attack" }
-        : {
+        : workers.length ? { kind: "blocked", label: "Workers cannot attack" } : {
             kind: "select",
             label: `Select ${(target.size ? defs : udefs)[target.type].name}`,
           };
@@ -2204,11 +2323,10 @@
     const node = workers.length ? resourceAt(x, y) : null;
     if (workers.length && target?.f === 0 && workerSlots(target))
       return workers.some((u) => canEnter(u, target))
-        ? { kind: target.type === "lumber" ? "chop" : target.type === "mine" ? "mine" : "move",
-          label: `Right-click: Enter ${defs[target.type].name}${defs[target.type].rate ? " (+1/s)" : " to retrain"}` }
+        ? { kind: "move", label: `Right-click: Enter ${defs[target.type].name} to retrain` }
         : { kind: "blocked", label: "Worker spaces are occupied or reserved" };
     if (node)
-      return node.type === "tree"
+      return node.type === "field" ? { kind: "farm", label: `Right-click: Farm (${workerGatherRate(workers[0], node)} food/s)` } : node.type === "tree"
         ? { kind: "chop", label: "Right-click: Chop lumber" }
         : { kind: "mine", label: "Right-click: Mine gold" };
     if (target)
@@ -2265,7 +2383,7 @@
     if (S.command === "enter") {
       let count = 0;
       for (const worker of troops.filter((u) => u.type === "worker")) if (orderEnter(worker, p)) count++;
-      if (!count) { message("Choose a friendly resource or military building with room for workers"); return; }
+      if (!count) { message("Choose a friendly military training building with room for workers"); return; }
       S.command = null;
       message(`${count} worker${count === 1 ? "" : "s"} moving inside`);
       updateUI();
@@ -2282,9 +2400,17 @@
       message("Select your units first");
       return;
     }
+    const combatOrder = attackMove || !!(p && p.f !== 0);
+    const recipients = combatOrder ? troops.filter((u) => u.type !== "worker") : troops;
+    if (!recipients.length) {
+      S.command = null;
+      message("Workers cannot attack. Choose resources, ground, or a friendly building.");
+      return;
+    }
     const node = resourceAt(clicked.x, clicked.y);
     let entering = 0, gathering = 0, repairing = 0;
-    troops.forEach((u, i) => {
+    recipients.forEach((u, i) => {
+      endDefense(u, false);
       u.hold = false;
       u.actionTime = 0;
       u.job = null;
@@ -2383,9 +2509,10 @@
     info.setAttribute("aria-expanded", String(document.body.classList.contains("panel-open")));
     document.getElementById("pause").textContent = S.paused ? "Resume" : "Pause";
     document.getElementById("pause").disabled = S.ended;
-    const active = canCommand(), troops = owned.some((o) => o.size === undefined);
+    const active = canCommand(), troops = owned.some((o) => o.size === undefined), fighters = owned.some((o) => o.size === undefined && o.type !== "worker");
     document.getElementById("touchOrder").disabled = !active || !(troops || owned.some((o) => o.size !== undefined && unitByBuilding[o.type]));
-    document.getElementById("touchAttack").disabled = !active || !troops;
+    document.getElementById("touchAttack").disabled = !active || !fighters;
+    document.getElementById("touchAttack").classList.toggle("hidden", !fighters);
     document.getElementById("touchStop").disabled = !active || !troops;
     document.getElementById("touchArmy").disabled = !active || !S.units.some((u) => u.f === 0 && u.hp > 0 && u.type !== "worker");
     const bar = document.getElementById("touchPlacementBar"), confirm = document.getElementById("touchConfirmBuild");
@@ -2394,7 +2521,7 @@
     confirm.disabled = !active || !S.placement || !touchPlacement ||
       !validPlace(S.placement, touchPlacement.x, touchPlacement.y) || !canPay(S.factions[0], defs[S.placement].cost);
     document.getElementById("touchPlacementStatus").textContent = S.placement
-      ? `${defs[S.placement].name}: ${!active ? "resume to build" : !canPay(S.factions[0], defs[S.placement].cost) ? "not enough resources" : !touchPlacement ? "tap to aim" : confirm.disabled ? "choose open land near your base" : "ready to build"}`
+      ? `${defs[S.placement].name}: ${!active ? "resume to build" : !canPay(S.factions[0], defs[S.placement].cost) ? "not enough resources" : !touchPlacement ? "tap to aim" : !hasBuilder(touchPlacement.x, touchPlacement.y) ? `worker needed within ${buildRules.workerRadius}` : confirm.disabled ? "choose clear land" : "ready to build"}`
       : `${S.command === "attack" ? "Attack-move" : S.command === "enter" ? "Enter building" : "Rally"}: tap destination`;
     document.getElementById("touchActionsToggle").textContent = `${document.getElementById("actionTitle").textContent} ${document.body.classList.contains("rail-roster") ? "▾" : "▴"}`;
     document.getElementById("touchActionsToggle").setAttribute("aria-expanded", String(document.body.classList.contains("rail-roster")));
@@ -2950,9 +3077,9 @@
   function armAttackMove() {
     if (!canCommand()) return;
     if (
-      !S.selected.some((u) => u.f === 0 && u.hp > 0 && u.size === undefined)
+      !S.selected.some((u) => u.f === 0 && u.hp > 0 && u.size === undefined && u.type !== "worker")
     ) {
-      message("Select units first");
+      message("Select fighting units first");
       return;
     }
     S.command = "attack";
@@ -2965,6 +3092,7 @@
     for (const u of S.selected.filter(
       (u) => u.f === 0 && u.size === undefined,
     )) {
+      endDefense(u, false);
       u.move = u.target = u.job = null;
       u.attackMove = false;
       u.hold = true;
@@ -3055,18 +3183,15 @@
     if (job.kind === "gather") {
       const amount = Math.min(
         t.amount,
-        dt *
-          (t.type === "ore" ? 1.3 : 1.7) *
-          (1 + S.factions[u.f].tech.economy * 0.25) *
-          (1 + ((u.level || 1) - 1) * 0.2),
+        dt * workerGatherRate(u, t),
       );
       t.amount -= amount;
       t.lastHarvest = S.time;
-      S.factions[u.f].resources[t.type === "ore" ? "gold" : "wood"] += amount;
+      S.factions[u.f].resources[resourceForNode(t)] += amount;
     } else {
       const f = S.factions[u.f];
       const restored = Math.min(
-        25 * dt,
+        25 * dt * (1 + S.factions[u.f].tech.economy * .25),
         t.maxHp - t.hp,
         f.resources.wood / 0.12,
       );
