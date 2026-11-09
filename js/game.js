@@ -23,10 +23,11 @@
       "#d9e0e5",
     ];
 
-  const { defs, udefs, unitByBuilding, research } = window.RealmfrontData;
+  const { defs, udefs, unitByBuilding, research, briefs } = window.RealmfrontData;
 
   // Shared game state
   let S = null,
+    fullMapView = false,
     camera = { x: 0, y: 0, z: 1 },
     viewport = { w: 100, h: 100 },
     mouse = {
@@ -128,6 +129,8 @@
       level: 1,
       attackTimer: 0,
       train: [],
+      queueInfo: [],
+      workers: [],
       progress: 0,
       invested: { ...d.cost },
     };
@@ -227,18 +230,7 @@
         },
       ],
     };
-    const locs = [
-      { x: 460, y: 450 },
-      { x: W - 430, y: 390 },
-      { x: W - 430, y: H - 390 },
-      { x: 450, y: H - 380 },
-      { x: W / 2, y: 330 },
-      { x: W / 2, y: H - 340 },
-      { x: 450, y: H / 2 },
-      { x: W - 430, y: H / 2 },
-      { x: 1880, y: 330 },
-      { x: 4720, y: H - 340 },
-    ];
+    const locs = world.startingPositions(n + 1);
     for (let i = 0; i < n + 1; i++)
       S.factions.push(faction(i, locs[i].x, locs[i].y, d));
     terrain.configure(S.factions.length, S.factions, S.outposts);
@@ -279,12 +271,14 @@
     S.factions[0].resources = { gold: 410, food: 340, wood: 390 };
     keys = {};
     mouse.down = false;
+    fullMapView = false;
     touchMode = "pan";
-    repeatBuild = false;
+    touchPlacement = null;
+    document.body?.classList.remove("actions-open", "panel-open", "map-open", "rail-info", "rail-build", "rail-roster");
     touches.clear();
     pinch = null;
     suppressTouch = false;
-    lastTouchTap = null;
+    lastSelectionClick = null;
     uiTick = lastMinimap = 0;
     camera.z = window.RealmfrontMobile?.touch
       ? Math.min(0.7, Math.max(0.35, viewport.h / 380))
@@ -314,16 +308,27 @@
   }
   function focusBase() {
     if (!S) return;
+    fullMapView = false;
     camera.z = window.RealmfrontMobile?.touch
       ? Math.min(0.7, Math.max(0.35, viewport.h / 380))
       : Math.max(camera.z, 0.9);
     centerOn(S.factions[0].x, S.factions[0].y);
+    updateMapButton();
   }
   function fitMap() {
     if (!S) return;
+    fullMapView = true;
     camera.z = world.fitZoom(viewport);
     centerOn(W / 2, H / 2);
+    updateMapButton();
     drawMini();
+  }
+  function updateMapButton() {
+    const button = document.getElementById("fitMap"), mobile = window.RealmfrontMobile?.touch;
+    const label = fullMapView ? `Base${mobile ? "" : " [H]"}` : `Full Map${mobile ? "" : " [M]"}`;
+    if (button.textContent !== label) button.textContent = label;
+    button.title = fullMapView ? "Return to your base [H]" : "View the full island and sea border [M]";
+    button.setAttribute("aria-label", fullMapView ? "Return to base" : "View full map");
   }
   function resize() {
     const center = {
@@ -342,6 +347,7 @@
       ? world.fitZoom(viewport)
       : Math.max(world.fitZoom(viewport), camera.z);
     centerOn(center.x, center.y);
+    updateMapButton();
   }
 
   // Selection panels and action buttons
@@ -354,6 +360,7 @@
       .join(" · ") || "Free";
   function refreshActions() {
     if (!S) return;
+    if (S.catalogPreview?.selection !== S.selected.map((o) => o.id).join(",")) S.catalogPreview = null;
     let sel = S.selected.filter((o) => o.hp > 0),
       one = sel.length === 1 ? sel[0] : null,
       building =
@@ -367,13 +374,11 @@
       for (let type of unitByBuilding[building.type])
         options.push({
           name: udefs[type].name,
-          description: costText(udefs[type].cost),
+          catalog: { kind: "unit", type, source: building.id },
+          description: costText(trainingCost(building, type)),
+          brief: building.workers.length && type !== "worker" ? "Retrain worker" : briefs.unit[type],
           details: udefs[type].desc,
-          run: () => train(building, type),
-          disabled:
-            !canPay(S.factions[0], udefs[type].cost) ||
-            S.factions[0].pop + pendingPop(0) >=
-              Math.min(100, S.factions[0].cap),
+          disabled: !!trainingBlockReason(building, type),
         });
     } else if (
       building &&
@@ -382,6 +387,9 @@
       title = "Defensive Building";
       options.push({
         name: "Upgrade Defense",
+        catalog: { kind: "upgrade", type: building.type, source: building.id },
+        brief: "Improve defenses",
+        details: "Improves this building's health, attack, range, and firing speed.",
         description: costText({
           gold: 100 * building.level,
           wood: 80 * building.level,
@@ -410,12 +418,20 @@
       for (let type of types)
         options.push({
           name: defs[type].name,
+          catalog: { kind: "building", type },
+          brief: briefs.building[type],
           description: costText(defs[type].cost),
           details: defs[type].desc,
           run: () => {
             if (!canCommand()) return;
             S.command = null;
             S.placement = type;
+            touchPlacement = null;
+            if (window.RealmfrontMobile?.touch) {
+              document.body.classList.remove("actions-open", "panel-open", "map-open");
+              document.body.classList.remove("rail-build", "rail-roster");
+              setTouchMode("pan");
+            }
             refreshDetails();
             refreshActions();
             message(`Place ${defs[type].name} on open ground`);
@@ -431,54 +447,156 @@
         const cost = researchCost(key, level);
         options.push({
           name: `${def.name} ${level}/3`,
+          catalog: { kind: "research", type: key, source: building.id },
+          brief: briefs.research[key],
+          details: def.desc,
           description:
             f.research?.key === key
               ? `Researching ${Math.floor((f.research.progress / def.time) * 100)}%`
-              : `${def.desc} ${costText(cost)} / ${def.time}s`,
+              : costText(cost),
           run: () => startResearch(0, key),
           disabled: level >= 3 || !!f.research || !canPay(f, cost),
         });
       }
     }
     document.getElementById("actionTitle").textContent = title;
+    if (!S.placement && !S.selected.length && !S.catalogPreview && !S.catalogDismissed)
+      S.catalogPreview = { kind: "building", type: "farm", selection: "" };
     let box = document.getElementById("actions");
-    box.innerHTML = "";
-    for (let o of options) {
-      let btn = document.createElement("button");
-      btn.className = "action" + (o.chosen ? " selected" : "");
-      btn.disabled = o.disabled;
-      btn.title = [o.name, o.details, o.description]
-        .filter(Boolean)
-        .join(" - ");
-      btn.setAttribute("aria-label", o.name);
-      let strong = document.createElement("strong");
-      strong.textContent = o.name;
-      let small = document.createElement("span");
-      small.textContent = o.description;
-      btn.append(strong, small);
-      if (o.details) {
-        const description = document.createElement("span");
+    const context = building ? String(building.id) : "construction";
+    if (box._actionContext !== context || box._actionRows?.length !== options.length) {
+      box.innerHTML = "";
+      box._actionContext = context;
+      box._actionRows = options.map(() => {
+        const btn = document.createElement("button"), strong = document.createElement("strong"),
+          small = document.createElement("span"), description = document.createElement("span"), icon = document.createElement("canvas");
+        icon.width = icon.height = 64;
+        icon.className = "action-icon";
+        icon.setAttribute("aria-hidden", "true");
         description.className = "action-description";
-        description.textContent = o.details;
-        btn.append(description);
-      }
-      btn.onclick = o.run;
-      box.appendChild(btn);
+        btn.append(strong, small, description, icon);
+        box.appendChild(btn);
+        return { btn, strong, small, description, icon };
+      });
+      box.scrollLeft = 0;
     }
+    options.forEach((o, index) => {
+      const { btn, strong, small, description, icon } = box._actionRows[index];
+      const previewed = o.catalog && S.catalogPreview?.kind === o.catalog.kind && S.catalogPreview?.type === o.catalog.type;
+      const unit = o.catalog?.kind === "unit", unavailable = o.disabled || !canCommand();
+      btn.className = "action" + (o.chosen || previewed ? " selected" : "") + (unit && unavailable ? " locked" : "");
+      btn.disabled = unit ? false : unavailable;
+      btn.title = [o.name, o.details, o.description].filter(Boolean).join(" - ");
+      btn.setAttribute("aria-label", o.name);
+      if (strong.textContent !== o.name) strong.textContent = o.name;
+      if (small.textContent !== o.description) small.textContent = o.description;
+      if (description.textContent !== (o.brief || "")) description.textContent = o.brief || "";
+      description.hidden = !o.brief;
+      paintCatalogIcon(icon, o.catalog);
+      btn.onpointerenter = (event) => { if (!unit && (event.pointerType !== "touch" || btn.disabled)) previewCatalog(o.catalog); };
+      btn.onfocus = () => { if (!window.RealmfrontMobile?.touch) previewCatalog(o.catalog); };
+      btn.onclick = () => {
+        previewCatalog(o.catalog);
+        if (!unit) o.run();
+        refreshDetails();
+      };
+    });
+  }
+  function previewCatalog(item) {
+    if (!item || S.placement) return;
+    S.catalogPreview = { ...item, selection: S.selected.map((o) => o.id).join(",") };
+    S.catalogDismissed = false;
+    refreshActions();
+    refreshDetails();
+  }
+  function paintCatalogIcon(canvas, item) {
+    if (!item) return;
+    if (["building", "upgrade"].includes(item.kind) && window.RealmfrontBuildings) {
+      window.RealmfrontBuildings.paintIcon(canvas, item.type); return;
+    }
+    const c = canvas.getContext("2d");
+    c.clearRect(0, 0, 64, 64);
+    c.fillStyle = "#172923"; c.fillRect(0, 0, 64, 64);
+    if (item.kind === "unit" && window.RealmfrontSprites?.draw(c, { type: item.type, f: 0, x: 32, y: 43, facing: 1, anim: 0, actionTime: 0, movedAt: -1 }, 0, colors[0])) return;
+    if (item.kind === "unit" && item.type === "catapult") {
+      c.strokeStyle = "#d2b57f"; c.lineWidth = 5; c.beginPath();
+      c.moveTo(17, 42); c.lineTo(30, 20); c.lineTo(45, 42); c.moveTo(28, 38); c.lineTo(46, 12); c.stroke();
+      c.fillStyle = "#a18254"; c.fillRect(12, 40, 42, 8);
+      c.fillStyle = "#c9d6cb";
+      for (const x of [20, 46]) { c.beginPath(); c.arc(x, 51, 6, 0, Math.PI * 2); c.fill(); }
+      return;
+    }
+    c.fillStyle = "#efd08c"; c.font = "bold 27px Georgia"; c.textAlign = "center";
+    c.fillText(item.kind === "research" ? "+" : (udefs[item.type]?.name || "?")[0], 32, 42);
+  }
+  function catalogDetails(item, placing = false) {
+    const b = S.buildings.find((b) => b.id === item.source && b.hp > 0);
+    const unit = item.kind === "unit", tech = item.kind === "research", d = unit ? udefs[item.type] : tech ? research[item.type] : defs[item.type];
+    if (!d) return "";
+    const cost = unit && b ? trainingCost(b, item.type) : tech ? researchCost(item.type, S.factions[0].tech[item.type]) : item.kind === "upgrade" && b ? upgradeCost(b) : d.cost;
+    const stats = unit ? [["Health", d.hp], ["Damage", d.damage], ["Range", d.range], ["Cooldown", `${d.cool}s`], ["Speed", `${d.speed}/s`], ["Armor", `${Math.round((d.armor || 0) * 100)}%`], ["Training", `${d.time}s`], ["Pop", b?.workers.length && item.type !== "worker" ? "Reuse" : "+1"]]
+      : tech ? [["Level", `${S.factions[0].tech[item.type]}/3`], ["Time", `${d.time}s`]]
+      : [["Health", d.hp],
+        ...(d.rate ? [["Income", Object.values(d.rate).map((rate) => `${rate}/s`).join(", ")]] : []),
+        ...(d.cap ? [["Capacity", `+${d.cap}`]] : []),
+        ...(d.workerSlots ? [["Workers", d.workerSlots]] : [])];
+    const blocked = unit ? trainingBlockReason(b, item.type) : "";
+    const trainButton = unit ? `<button id="catalogTrain" class="catalog-train" type="button" aria-label="Train ${d.name}"${blocked ? " disabled" : ""}>Train</button>` : "";
+    return `<div class="catalog-detail"><div class="catalog-heading"><canvas width="64" height="64" class="catalog-portrait" aria-hidden="true"></canvas><h3>${placing ? "Build " : item.kind === "upgrade" ? "Upgrade " : ""}${d.name}</h3>${trainButton}</div><p class="info catalog-description">${d.desc}</p><div class="catalog-cost">${costText(cost)}</div><dl class="catalog-stats">${stats.map(([label, value]) => `<div><dt>${label}:</dt><dd>${value}</dd></div>`).join("")}</dl>${blocked ? `<p class="hint">${blocked}</p>` : ""}${placing ? '<p class="hint">Tap land to preview, then Build here to confirm.</p>' : b ? `<p class="hint">${defs[b.type].name} · Queue ${b.train.length}/5${unit && b.workers.length && item.type !== "worker" ? " · Retrains a waiting worker" : ""}</p><button id="catalogBuildingInfo" class="small" type="button">Building info &amp; commands</button>` : '<p class="hint">Choose a card to start placing a building.</p>'}</div>`;
+  }
+  // Keep live panel nodes (and an in-progress tap/scroll) through HUD updates.
+  function setDetails(box, html) {
+    if (box._detailsHTML === html) return;
+    box._detailsHTML = html;
+    if (!box.childNodes) { box.innerHTML = html; return; }
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    function sync(parent, incoming) {
+      const old = [...parent.childNodes], next = [...incoming.childNodes];
+      next.forEach((node, index) => {
+        const current = old[index];
+        if (!current) { parent.appendChild(node.cloneNode(true)); return; }
+        if (current.nodeType !== node.nodeType || current.nodeName !== node.nodeName) {
+          current.replaceWith(node.cloneNode(true)); return;
+        }
+        if (node.nodeType === 3) { if (current.nodeValue !== node.nodeValue) current.nodeValue = node.nodeValue; return; }
+        if (node.nodeType !== 1) return;
+        const keepCommands = current.id === "detailCommands" && node.id === "detailCommands";
+        if (current.id !== node.id && (current.id === "detailCommands" || node.id === "detailCommands")) delete current._commandRows;
+        for (const attr of [...current.attributes]) if (!node.hasAttribute(attr.name)) current.removeAttribute(attr.name);
+        for (const attr of [...node.attributes]) if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
+        if (!keepCommands) sync(current, node);
+      });
+      old.slice(next.length).forEach((node) => node.remove());
+    }
+    sync(box, template.content);
   }
   function refreshDetails() {
     if (!S) return;
     const arr = S.selected.filter((o) => o.hp > 0),
       box = document.getElementById("details");
-    if (S.placement) {
-      const d = defs[S.placement];
-      box.innerHTML = `<canvas width="64" height="64" class="selection-building-icon" data-building-icon="${S.placement}" role="img" aria-label="${d.name} icon"></canvas><h3>Build ${d.name}</h3><p class="info">${d.desc}</p><div class="info">Cost: ${costText(d.cost)}</div><p class="hint">Click valid land to build. Hold Ctrl while clicking to keep placing this building. On touch, use Repeat build and Cancel.</p>`;
-      window.RealmfrontBuildings?.paintIcons(box);
+    if (S.catalogPreview?.selection !== S.selected.map((o) => o.id).join(",")) S.catalogPreview = null;
+    if (window.RealmfrontMobile?.touch) updateTouchUI();
+    const item = S.placement ? { kind: "building", type: S.placement } : S.catalogPreview;
+    document.getElementById("selectionHeading").textContent = item ? item.kind === "unit" ? "Unit details" : item.kind === "research" ? "Research details" : "Building details" : "Selection";
+    if (item) {
+      setDetails(box, catalogDetails(item, !!S.placement));
+      const portrait = box.querySelector?.(".catalog-portrait");
+      if (portrait) paintCatalogIcon(portrait, item);
+      const trainButton = document.getElementById("catalogTrain");
+      if (trainButton && item.kind === "unit") trainButton.onclick = () => {
+        const building = S.buildings.find((b) => b.id === item.source);
+        train(building, item.type);
+      };
+      const inspect = document.getElementById("catalogBuildingInfo");
+      if (inspect) inspect.onclick = () => {
+        S.catalogPreview = null; S.catalogDismissed = true;
+        refreshDetails();
+      };
       return;
     }
     if (!arr.length) {
-      box.innerHTML =
-        '<div class="muted">Select a unit or building for its description. Double-click to select all of the same type in that kingdom.</div>';
+      setDetails(box, '<div class="muted">Tap/click one unit to select it. Double a fighter for all fighters; triple to include workers. Double a worker for all workers.</div>');
       return;
     }
     const groups = new Map();
@@ -492,9 +610,11 @@
       const o = items[0],
         isB = o.size !== undefined,
         d = isB ? defs[o.type] : udefs[o.type];
+      if (isB) html += '<div class="catalog-detail building-detail">';
+      html += '<div class="selection-title">';
       if (isB)
         html += `<canvas width="64" height="64" class="selection-building-icon" data-building-icon="${o.type}" role="img" aria-label="${d.name} icon"></canvas>`;
-      html += `<h3>${items.length > 1 ? items.length + " x " : ""}${d.name}</h3><p class="info selection-description">${d.desc}</p>`;
+      html += `<h3>${items.length > 1 ? items.length + " x " : ""}${d.name}</h3></div><p class="info selection-description">${d.desc}</p>`;
       if (items.length === 1) {
         html += `<div class="info">Level ${o.level || 1}/3 · Health ${Math.ceil(o.hp)} / ${o.maxHp}<div class="bar"><span style="width:${clamp((o.hp / o.maxHp) * 100, 0, 100)}%"></span></div>`;
         if (isB) {
@@ -503,24 +623,23 @@
             html += `<br>Income: ${Object.entries(d.rate)
               .map(
                 ([k, v]) =>
-                  (
-                    v *
-                    buildingMultiplier(o) *
-                    (1 + S.factions[o.f].tech.economy * 0.25)
-                  ).toFixed(2) +
+                  buildingIncome(o, k).toFixed(2) +
                   " " +
                   k +
                   "/s",
               )
               .join(", ")}`;
+          if (workerSlots(o)) html += `<br>Workers inside: ${occupiedSlots(o)}/${workerSlots(o)}${d.rate ? " · One worker adds 1/s before bonuses." : " · Select a unit card to retrain a waiting worker."}`;
           if (o.train.length)
-            html += `<br>Training (${o.train.length}/5): ${o.train.map((v) => udefs[v].name).join(", ")}`;
+            html += `<br>Training (${o.train.length}/5): ${o.train.map((v, i) => udefs[v].name + (queueWorker(o, i) ? " (worker)" : "")).join(", ")}`;
         } else
           html += `<br>Damage ${Math.round(combatDamage(o, {}))} · Range ${d.range}<br>Speed ${Math.round(unitSpeed(o))} · Armor ${Math.round(unitArmor(o) * 100)}%`;
         if (o.type === "worker") {
           const task =
             o.job?.kind === "repair"
               ? "Repairing building"
+              : o.job?.kind === "enter"
+                ? `Entering ${defs[o.job.target.type].name}`
               : o.job?.kind === "gather"
                 ? o.job.target.type === "tree"
                   ? "Chopping lumber"
@@ -540,6 +659,7 @@
           .filter(Boolean);
         html += `<div class="info">${levels.join(" · ")}</div>`;
       }
+      if (isB) html += '</div>';
     }
     const owned = arr.filter((o) => o.f === 0),
       upgradable = owned.filter((o) => (o.level || 1) < 3),
@@ -560,24 +680,34 @@
         html += `<div class="info">Sell ${sellable.length}: ${costText(totalCosts(sellable.map(sellValue)))}</div><div class="hint">50% of purchase and upgrade costs returned. Queued recruits are fully refunded. Town Halls cannot be sold.</div>`;
       html += '<div id="detailCommands" class="sidebuttons"></div>';
     }
-    box.innerHTML = html;
+    setDetails(box, html);
     window.RealmfrontBuildings?.paintIcons(box);
     if (!owned.length) return;
     const commands = document.getElementById("detailCommands");
+    const rows = commands._commandRows || (commands._commandRows = []);
+    let commandIndex = 0;
     const make = (text, fn, disabled = false) => {
-      const b = document.createElement("button");
+      const b = rows[commandIndex] || document.createElement("button");
+      if (!rows[commandIndex]) { rows.push(b); commands.append(b); }
+      commandIndex++;
       b.className = "small";
       b.textContent = text;
-      b.disabled = disabled;
+      b.disabled = disabled || !canCommand();
       b.onclick = fn;
-      commands.append(b);
     };
     make(
-      "Upgrade [U]",
+      window.RealmfrontMobile?.touch ? "Upgrade" : "Upgrade [U]",
       upgradeSelected,
       !upgradable.some((o) => canPay(S.factions[0], upgradeCost(o))),
     );
-    make("Sell [S]", sellSelected, !sellable.length);
+    make(window.RealmfrontMobile?.touch ? "Sell…" : "Sell [L]", () => {
+      if (!window.RealmfrontMobile?.touch) { sellSelected(); return; }
+      const selection = [...S.selected];
+      window.RealmfrontMobile.confirmSale(`Sell ${sellable.length} selected item${sellable.length === 1 ? "" : "s"}? Refund: ${costText(totalCosts(sellable.map(sellValue)))}. Queued recruits are refunded too.`, () => {
+        S.selected = selection;
+        sellSelected();
+      });
+    }, !sellable.length);
     const buildings = owned.filter(
       (o) => o.size !== undefined && unitByBuilding[o.type],
     );
@@ -586,7 +716,7 @@
         if (!canCommand()) return;
         S.command = "rally";
         updateUI();
-        message("Click ground to set selected building rally points");
+        message(`${window.RealmfrontMobile?.touch ? "Tap" : "Click"} ground to set selected building rally points`);
       });
       if (buildings.some((b) => b.rally))
         make("Clear Rally", () => {
@@ -600,34 +730,132 @@
         });
     }
     if (owned.some((o) => o.size === undefined)) {
-      make("Attack-move [A]", armAttackMove);
-      make("Stop", stopSelected);
+      if (owned.some((o) => o.type === "worker")) make("Enter building", () => {
+        if (!canCommand()) return;
+        S.command = "enter";
+        S.placement = null;
+        if (window.RealmfrontMobile?.touch) document.body.classList.remove("panel-open", "map-open", "actions-open", "rail-info", "rail-build", "rail-roster");
+        updateUI();
+        message("Choose a friendly resource or military training building");
+      });
+      make(window.RealmfrontMobile?.touch ? "Attack-move" : "Attack-move [A]", armAttackMove);
+      make(window.RealmfrontMobile?.touch ? "Stop" : "Stop [S]", stopSelected);
     }
+    const staffed = owned.filter((o) => o.size !== undefined && o.workers.length);
+    if (staffed.length) make("Release workers", () => {
+      if (!canCommand()) return;
+      for (const b of staffed) for (const worker of [...b.workers]) releaseWorker(b, worker);
+      updateUI();
+    });
+    while (rows.length > commandIndex) rows.pop().remove?.();
   }
 
   // Recruitment, upgrades, and construction
+  const workerSlots = (b) => defs[b?.type]?.workerSlots || 0;
+  const queueWorker = (b, index) => b.queueInfo[index]?.worker;
+  function occupiedSlots(b) {
+    return b.workers.length + b.queueInfo.filter((entry) => entry?.worker).length;
+  }
+  function canEnter(u, b) {
+    return u.type === "worker" && u.hp > 0 && b?.hp > 0 && b.f === u.f && workerSlots(b) > 0 &&
+      workerSlots(b) > occupiedSlots(b) + S.units.filter((other) =>
+        other !== u && other.hp > 0 && other.job?.kind === "enter" && other.job.target === b).length;
+  }
+  function orderEnter(u, b) {
+    if (!canEnter(u, b)) return false;
+    u.job = { kind: "enter", target: b };
+    u.target = u.move = null;
+    u.route = null;
+    u.attackMove = false;
+    u.hold = false;
+    return true;
+  }
+  function enterBuilding(u, b) {
+    if (!canEnter(u, b) || !S.units.includes(u) || dist(u, b) > b.size * 0.6 + 13) return false;
+    const wasSelected = S.selected.includes(u);
+    u.job = u.target = u.move = u.route = null;
+    u.hold = true;
+    u.actionTime = 0;
+    b.workers.push(u);
+    S.units = S.units.filter((other) => other !== u);
+    S.selected = S.selected.filter((other) => other !== u);
+    if (wasSelected && !S.selected.length && b.f === 0) {
+      S.selected = [b];
+      if (window.RealmfrontMobile?.touch && unitByBuilding[b.type]) document.body.classList.add("actions-open");
+    }
+    for (const other of S.units) if (other.target === u) other.target = null;
+    for (const shot of S.shots) if (shot.to === u) shot.life = -1;
+    if (b.f === 0) {
+      message(`Worker entered ${defs[b.type].name}`);
+      refreshDetails();
+      refreshActions();
+    }
+    return true;
+  }
+  function releaseWorker(b, worker) {
+    b.workers = b.workers.filter((u) => u !== worker);
+    let exit;
+    for (let i = 0; i < 20; i++) {
+      const angle = (worker.id + i) * 2.3999, radius = b.size * 0.65 + 35;
+      exit = terrain.nearestWalkable(b.x + Math.cos(angle) * radius, b.y + Math.sin(angle) * radius);
+      if (S.units.every((u) => u.hp <= 0 || dist(u, exit) > 26)) break;
+    }
+    Object.assign(worker, exit);
+    worker.job = worker.target = worker.move = worker.route = null;
+    worker.hold = true;
+    worker.actionTime = 0;
+    if (worker.hp > 0 && !S.units.includes(worker)) S.units.push(worker);
+  }
+  function evacuateWorkers(b) {
+    for (const worker of [...b.workers, ...b.queueInfo.map((entry) => entry?.worker).filter(Boolean)]) releaseWorker(b, worker);
+    b.workers = [];
+    b.queueInfo = [];
+    b.train = [];
+    b.progress = 0;
+  }
+  function buildingIncome(b, resource) {
+    const base = defs[b.type].rate?.[resource] || 0;
+    const bonus = b.workers.reduce((sum, u) => sum + 1 + ((u.level || 1) - 1) * 0.2, 0);
+    return base + (base ? bonus * buildingMultiplier(b) * (1 + S.factions[b.f].tech.economy * 0.25) *
+      (b.f === 0 ? 1 : S.difficulty) : 0);
+  }
+  function trainingCost(b, type) {
+    if (!b.workers.length || type === "worker") return { ...udefs[type].cost };
+    return Object.fromEntries(Object.entries(udefs[type].cost).map(([key, value]) =>
+      [key, Math.max(0, value - (udefs.worker.cost[key] || 0))]));
+  }
+  function enqueue(b, type, worker = null, cost = udefs[type].cost) {
+    while (b.queueInfo.length < b.train.length) b.queueInfo.push(null);
+    b.train.push(type);
+    b.queueInfo.push(worker ? { worker, cost: { ...cost } } : null);
+  }
   function pendingPop(id) {
     return S.buildings
       .filter((b) => b.hp > 0 && b.f === id)
-      .reduce((sum, b) => sum + b.train.length, 0);
+      .reduce((sum, b) => sum + b.train.filter((type, index) => !queueWorker(b, index)).length, 0);
+  }
+  function trainingBlockReason(b, type) {
+    if (!b || b.hp <= 0 || b.f !== 0 || !unitByBuilding[b.type]?.includes(type))
+      return "Select a friendly training building.";
+    if (!canCommand()) return S?.paused ? "Resume the game to train." : "Training is unavailable.";
+    if (b.train.length >= 5) return "Training queue is full (5 units).";
+    if (!(b.workers.length && type !== "worker") && S.factions[0].pop + pendingPop(0) >= Math.min(100, S.factions[0].cap))
+      return "Population limit reached. Build Houses.";
+    if (!canPay(S.factions[0], trainingCost(b, type))) return "Not enough resources.";
+    return "";
   }
   function train(b, type) {
-    if (!canCommand() || b.hp <= 0 || b.f !== 0) return;
-    let f = S.factions[0];
-    if (b.train.length >= 5) {
-      message("Training queue is full (5 units)");
-      return;
-    }
-    if (f.pop + pendingPop(0) >= Math.min(100, f.cap)) {
-      message("Population limit reached. Build Houses.");
-      return;
-    }
-    if (!pay(f, udefs[type].cost)) {
+    const blocked = trainingBlockReason(b, type);
+    if (blocked) { message(blocked); return; }
+    const f = S.factions[0], worker = type !== "worker" ? b.workers[0] : null;
+    const cost = trainingCost(b, type);
+    if (!pay(f, cost)) {
       message("Not enough resources");
       return;
     }
-    b.train.push(type);
-    message(`${udefs[type].name} added to training queue`);
+    if (worker) b.workers.shift();
+    enqueue(b, type, worker, cost);
+    message(`${worker ? "Worker retraining as" : "Queued"} ${udefs[type].name}`);
     refreshActions();
     refreshDetails();
   }
@@ -722,9 +950,10 @@
       for (const [k, v] of Object.entries(sellValue(o))) f.resources[k] += v;
       if (o.size !== undefined) {
         f.cap -= capacity(o);
-        for (const type of o.train)
-          for (const [k, v] of Object.entries(udefs[type].cost))
+        for (const [index, type] of o.train.entries())
+          for (const [k, v] of Object.entries(o.queueInfo[index]?.cost || udefs[type].cost))
             f.resources[k] += v;
+        evacuateWorkers(o);
       } else f.pop = Math.max(0, f.pop - 1);
       o.hp = 0;
     }
@@ -754,6 +983,22 @@
     refreshActions();
     refreshDetails();
   }
+  function selectClicked(o) {
+    S.catalogPreview = null;
+    S.catalogDismissed = false;
+    if (window.RealmfrontMobile?.touch) document.body.classList.remove("rail-info", "rail-build", "rail-roster", "map-open");
+    if (!o) { S.selected = []; lastSelectionClick = null; refreshActions(); refreshDetails(); return; }
+    const now = performance.now();
+    const count = lastSelectionClick?.id === o.id && now - lastSelectionClick.time < 500
+      ? Math.min(3, lastSelectionClick.count + 1) : 1;
+    lastSelectionClick = { id: o.id, time: now, count };
+    if (count === 1) S.selected = [o];
+    else if (o.size !== undefined) { selectSameType(o); return; }
+    else S.selected = S.units.filter((u) => u.hp > 0 && u.f === o.f &&
+      (o.type === "worker" ? u.type === "worker" : count >= 3 || u.type !== "worker"));
+    refreshActions();
+    refreshDetails();
+  }
   function placeBuilding(x, y, repeat = false) {
     if (!canCommand() || !S.placement) return null;
     const type = S.placement,
@@ -768,9 +1013,10 @@
     S.selected = [b];
     if (!repeat) {
       S.placement = null;
+      if (window.RealmfrontMobile?.touch) document.body.classList.remove("rail-info", "rail-build", "rail-roster");
     }
     message(
-      `${defs[type].name} constructed${repeat ? " - click again to keep building" : ""}`,
+      `${defs[type].name} constructed${repeat ? window.RealmfrontMobile?.touch ? " - aim and confirm another" : " - click again to keep building" : ""}`,
     );
     refreshActions();
     refreshDetails();
@@ -915,6 +1161,7 @@
         });
       if (t.size !== undefined) {
         S.factions[t.f].cap -= capacity(t);
+        evacuateWorkers(t);
         if (t.type === "hall") {
           log(`${t.f === 0 ? "Your" : `Kingdom ${t.f}`} Town Hall has fallen!`);
           if (t.f === 0) {
@@ -1058,17 +1305,11 @@
   }
   function simulateBuildings(dt) {
     for (let b of S.buildings) {
-      if (b.hp <= 0) continue;
+      if (b.hp <= 0) { evacuateWorkers(b); continue; }
       let f = S.factions[b.f],
         d = defs[b.type];
       if (d.rate)
-        for (let [k, v] of Object.entries(d.rate))
-          f.resources[k] +=
-            v *
-            dt *
-            (b.f === 0 ? 1 : S.difficulty) *
-            (1 + f.tech.economy * 0.25) *
-            buildingMultiplier(b);
+        for (const k of Object.keys(d.rate)) f.resources[k] += buildingIncome(b, k) * dt;
       if (b.train.length) {
         b.progress +=
           dt *
@@ -1076,11 +1317,25 @@
           (1 + (b.level - 1) * 0.15) *
           (b.f === 0 && S.cheats.fastTraining ? 20 : 1);
         let type = b.train[0];
-        if (b.progress >= udefs[type].time && f.pop < Math.min(100, f.cap)) {
+        const retraining = b.queueInfo[0];
+        if (b.progress >= udefs[type].time && (retraining?.worker || f.pop < Math.min(100, f.cap))) {
           b.progress = 0;
           b.train.shift();
+          b.queueInfo.shift();
           let a = rand(0, Math.PI * 2);
-          const unit = addUnit(
+          let unit;
+          if (retraining?.worker) {
+            unit = retraining.worker;
+            const fraction = unit.hp / unit.maxHp;
+            releaseWorker(b, unit);
+            unit.type = type;
+            unit.maxHp = Math.round(udefs[type].hp * (1 + ((unit.level || 1) - 1) * 0.25));
+            unit.hp = Math.max(1, Math.round(unit.maxHp * fraction));
+            unit.hold = false;
+            unit.attackTimer = 0;
+            unit.think = 0;
+            unit.invested = totalCosts([unit.invested, retraining.cost]);
+          } else unit = addUnit(
             b.f,
             type,
             b.x + Math.cos(a) * (b.size * 0.65 + 30),
@@ -1181,10 +1436,13 @@
         (b) => b.f === f.id && b.hp > 0 && unitByBuilding[b.type],
       ),
       opts = [];
+    const workerCount = S.units.filter((u) => u.f === f.id && u.hp > 0 && u.type === "worker").length +
+      S.buildings.filter((b) => b.f === f.id && b.hp > 0).reduce((sum, b) => sum + b.workers.length + b.train.filter((type) => type === "worker").length, 0);
+    const desiredWorkers = Math.min(12, S.buildings.filter((b) => b.f === f.id && b.hp > 0 && defs[b.type].rate).length + 2);
     for (let b of buildings) {
       if (b.train.length >= 3) continue;
       let pool = unitByBuilding[b.type].filter((type) =>
-        canPay(f, udefs[type].cost),
+        canPay(f, udefs[type].cost) && (type !== "worker" || workerCount < desiredWorkers),
       );
       if (!pool.length) continue;
       let type = pool[Math.floor(Math.random() * pool.length)];
@@ -1194,7 +1452,7 @@
       return;
     let choice = opts[Math.floor(Math.random() * opts.length)];
     pay(f, udefs[choice.type].cost);
-    choice.b.train.push(choice.type);
+    enqueue(choice.b, choice.type);
   }
   function aiRaid(f) {
     let troops = S.units.filter(
@@ -1244,6 +1502,11 @@
         if (!counts.hall) {
           f.alive = false;
           continue;
+        }
+        for (const b of S.buildings.filter((b) => b.f === f.id && b.hp > 0 && defs[b.type].rate)
+          .sort((a, b) => ["mine", "lumber", "farm"].indexOf(a.type) - ["mine", "lumber", "farm"].indexOf(b.type))) {
+          const worker = nearest(S.units.filter((u) => u.f === f.id && u.hp > 0 && u.type === "worker" && u.job?.kind !== "enter" && canEnter(u, b)), b);
+          if (worker) orderEnter(worker, b);
         }
         if (f.cap < 100 && f.cap - f.pop - pendingPop(f.id) < 5)
           aiBuild(f, "house");
@@ -1409,13 +1672,14 @@
     if (S.placement) {
       let type = S.placement,
         d = defs[type],
+        preview = window.RealmfrontMobile?.touch && touchPlacement ? touchPlacement : { x: mouse.wx, y: mouse.wy },
         valid =
-          validPlace(type, mouse.wx, mouse.wy) && canPay(S.factions[0], d.cost);
+          validPlace(type, preview.x, preview.y) && canPay(S.factions[0], d.cost);
       ctx.save();
       ctx.globalAlpha = 0.6;
       window.RealmfrontBuildings?.draw(
         ctx,
-        { type, f: 0, x: mouse.wx, y: mouse.wy, size: d.size, level: 1 },
+        { type, f: 0, x: preview.x, y: preview.y, size: d.size, level: 1 },
         colors[0],
         S.time,
       );
@@ -1423,20 +1687,20 @@
       ctx.strokeStyle = valid ? "#b5fbb6" : "#ffb1a7";
       ctx.lineWidth = 3;
       ctx.fillRect(
-        mouse.wx - d.size / 2,
-        mouse.wy - d.size / 2,
+        preview.x - d.size / 2,
+        preview.y - d.size / 2,
         d.size,
         d.size,
       );
       ctx.strokeRect(
-        mouse.wx - d.size / 2,
-        mouse.wy - d.size / 2,
+        preview.x - d.size / 2,
+        preview.y - d.size / 2,
         d.size,
         d.size,
       );
       if (d.range) {
         ctx.beginPath();
-        ctx.arc(mouse.wx, mouse.wy, d.range, 0, Math.PI * 2);
+        ctx.arc(preview.x, preview.y, d.range, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.restore();
@@ -1464,6 +1728,17 @@
         mouse.x - (mouse.startX - rect.left),
         mouse.y - (mouse.startY - rect.top),
       );
+    }
+    if (mouse.isTouch && mouse.down && !mouse.moved && !pinch && !S.placement && !S.command && performance.now() - mouse.startedAt >= 300) {
+      ctx.strokeStyle = "#e2edaa";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(mouse.x, mouse.y, 17, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = "bold 12px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#f5efca";
+      ctx.fillText("Drag to select", clamp(mouse.x, 55, viewport.w - 55), Math.max(20, mouse.y - 25));
     }
   }
   function circle(x, y, r) {
@@ -1593,6 +1868,13 @@
       ctx.textAlign = "center";
       ctx.fillStyle = "#edf0d9";
       ctx.fillText(d.name, x, y + s * 0.65 + 18);
+      if (occupiedSlots(b)) {
+        ctx.fillStyle = "#142820e8";
+        ctx.fillRect(x + s * 0.35, y - s * 0.5, 46, 16);
+        ctx.fillStyle = "#f3d68d";
+        ctx.font = "bold 10px system-ui";
+        ctx.fillText(`W ${occupiedSlots(b)}/${workerSlots(b)}`, x + s * 0.35 + 23, y - s * 0.5 + 12);
+      }
     }
   }
   function drawUnit(u) {
@@ -1711,11 +1993,19 @@
   // HUD updates and animation loop
   function updateUI() {
     if (!S) return;
+    updateMapButton();
     window.RealmfrontCheats?.refresh();
     let f = S.factions[0],
       res = f.resources;
-    for (let k of ["gold", "food", "wood"])
-      document.getElementById(k).textContent = fmt(res[k]);
+    for (let k of ["gold", "food", "wood"]) {
+      const element = document.getElementById(k);
+      const value = res[k];
+      element.textContent = window.RealmfrontMobile?.touch && value >= 10000
+        ? (value >= 1e9 ? `${Math.floor(value / 1e8) / 10}B` : value >= 1e6 ? `${Math.floor(value / 1e5) / 10}M` : `${Math.floor(value / 100) / 10}K`)
+        : fmt(value);
+      element.setAttribute("aria-label", `${k}: ${Math.floor(value)}`);
+      element.title = String(Math.floor(value));
+    }
     document.getElementById("pop").textContent =
       `${f.pop}/${Math.min(100, f.cap)}`;
     let m = Math.floor(S.time / 60),
@@ -1725,22 +2015,22 @@
     document.getElementById("factionsAlive").textContent =
       `${S.factions.filter((v) => v.alive).length - 1} Rivals Remain`;
     document.getElementById("status").textContent =
-      `${S.buildings.filter((b) => b.f === 0).length} buildings · ${S.units.filter((u) => u.f === 0).length} units · ${S.difficulty === 1 ? "Normal" : S.difficulty < 1 ? "Casual" : "Hard"} AI`;
+      `${S.buildings.filter((b) => b.f === 0).length} buildings · ${f.pop} units (including inside) · ${S.difficulty === 1 ? "Normal" : S.difficulty < 1 ? "Casual" : "Hard"} AI`;
     const held = S.outposts.filter((p) => p.owner === 0).length;
     document.getElementById("objectives").textContent =
       `Hold crossings for bonus income · ${held}/3 held`;
     document.getElementById("commandState").textContent = S.command
-      ? `${S.command === "attack" ? "Attack-move" : "Rally point"}: click destination · Esc cancels`
+      ? `${S.command === "attack" ? "Attack-move" : S.command === "enter" ? "Enter building" : "Rally point"}: click destination · Esc cancels`
       : "Ready · A attack-move · Ctrl+1–9 save group";
     document
       .getElementById("pauseState")
       .classList.toggle("hidden", !S.paused || S.ended);
     if (window.RealmfrontMobile?.touch) {
       document.getElementById("commandState").textContent = S.command
-        ? `${S.command === "attack" ? "Attack" : "Rally"}: tap destination - Cancel to stop`
+        ? `${S.command === "attack" ? "Attack" : S.command === "enter" ? "Enter building" : "Rally"}: tap destination - Cancel to stop`
         : S.placement
-          ? `Tap land to build${repeatBuild ? " - Repeat build is on" : ""}`
-          : `${touchMode[0].toUpperCase() + touchMode.slice(1)} mode - pinch or use + / - to zoom`;
+          ? "Tap to preview, then Build here"
+          : "Hold to select · Swipe to pan · Pinch to zoom";
       updateTouchUI();
     }
     refreshActions();
@@ -1878,12 +2168,19 @@
     }
     if (!world.contains(x, y))
       return { kind: "blocked", label: "Sea - cannot enter" };
+    if (S.command === "enter") {
+      const building = pick(x, y);
+      const possible = S.selected.some((u) => u.f === 0 && u.size === undefined && canEnter(u, building));
+      return possible ? { kind: building.type === "lumber" ? "chop" : building.type === "mine" ? "mine" : "move",
+        label: `Click to enter ${defs[building.type].name}` } : { kind: "blocked", label: "Choose a friendly resource or military building with worker spaces" };
+    }
     if (S.command)
       return {
-        kind: S.command === "attack" ? "attack" : "rally",
+        kind: S.command === "attack" ? "attack" : S.command === "enter" ? "move" : "rally",
         label:
           S.command === "attack"
             ? "Click to attack-move"
+            : S.command === "enter" ? "Click a friendly resource or military building to enter"
             : "Click to set rally point",
       };
     const owned = S.selected.filter((o) => o.f === 0 && o.hp > 0),
@@ -1905,6 +2202,11 @@
     )
       return { kind: "repair", label: "Right-click: Repair building" };
     const node = workers.length ? resourceAt(x, y) : null;
+    if (workers.length && target?.f === 0 && workerSlots(target))
+      return workers.some((u) => canEnter(u, target))
+        ? { kind: target.type === "lumber" ? "chop" : target.type === "mine" ? "mine" : "move",
+          label: `Right-click: Enter ${defs[target.type].name}${defs[target.type].rate ? " (+1/s)" : " to retrain"}` }
+        : { kind: "blocked", label: "Worker spaces are occupied or reserved" };
     if (node)
       return node.type === "tree"
         ? { kind: "chop", label: "Right-click: Chop lumber" }
@@ -1960,6 +2262,15 @@
     const troops = S.selected.filter(
       (o) => o.size === undefined && o.f === 0 && o.hp > 0,
     );
+    if (S.command === "enter") {
+      let count = 0;
+      for (const worker of troops.filter((u) => u.type === "worker")) if (orderEnter(worker, p)) count++;
+      if (!count) { message("Choose a friendly resource or military building with room for workers"); return; }
+      S.command = null;
+      message(`${count} worker${count === 1 ? "" : "s"} moving inside`);
+      updateUI();
+      return;
+    }
     if (S.command === "rally" || (!troops.length && buildings.length)) {
       for (const b of buildings) b.rally = { x, y };
       S.command = null;
@@ -1972,6 +2283,7 @@
       return;
     }
     const node = resourceAt(clicked.x, clicked.y);
+    let entering = 0, gathering = 0, repairing = 0;
     troops.forEach((u, i) => {
       u.hold = false;
       u.actionTime = 0;
@@ -1987,10 +2299,18 @@
         p?.f === u.f &&
         p.size &&
         p.hp < p.maxHp
-      )
+      ) {
         u.job = { kind: "repair", target: p };
-      else if (!attackMove && u.type === "worker" && node)
+        repairing++;
+      }
+      else if (!attackMove && u.type === "worker" && p?.f === u.f && workerSlots(p)) {
+        if (orderEnter(u, p)) entering++;
+        else u.hold = true;
+      }
+      else if (!attackMove && u.type === "worker" && node) {
         u.job = { kind: "gather", target: node };
+        gathering++;
+      }
       else {
         const a = i * 2.3999,
           r = 23 * Math.sqrt(i);
@@ -2010,10 +2330,12 @@
     message(
       attackMove
         ? "Attack-move ordered"
-        : node
+        : entering ? `${entering} worker${entering === 1 ? "" : "s"} moving inside`
+        : gathering
           ? "Workers assigned to gather"
-          : p?.f === 0 && p.size
+          : repairing
             ? "Workers assigned to repair"
+            : p?.f === 0 && workerSlots(p) && troops.some((u) => u.type === "worker") ? "No free worker spaces"
             : p && p.f !== 0
               ? "Attack ordered"
               : "Move ordered",
@@ -2022,11 +2344,10 @@
 
   // Touch controls use explicit modes so every mouse command remains accessible.
   let touchMode = "pan",
-    repeatBuild = false,
+    touchPlacement = null,
     pinch = null,
     suppressTouch = false,
-    touchStartMode = "pan",
-    lastTouchTap = null;
+    lastSelectionClick = null;
   const touches = new Map();
   function setTouchMode(mode) {
     touchMode = mode;
@@ -2037,35 +2358,57 @@
       document
         .getElementById("touch" + mode[0].toUpperCase() + mode.slice(1))
         .setAttribute("aria-pressed", String(touchMode === mode));
-    document
-      .getElementById("touchRepeat")
-      .setAttribute("aria-pressed", String(repeatBuild));
     if (window.RealmfrontMobile?.touch)
       document.getElementById("tip").textContent =
-        touchMode === "select"
-          ? "Select: drag a box or tap units to add/remove them."
-          : touchMode === "order"
-            ? "Order: tap to move, attack, gather, repair or rally."
-            : "Pan: drag the map; tap to select. Pinch to zoom.";
+        "Hold, then drag to select · Tap targets to command · Swipe/pinch to explore";
     document.getElementById("pauseHint").textContent = window.RealmfrontMobile
       ?.touch
       ? "Tap Resume to continue"
       : "Space to resume";
+    if (!window.RealmfrontMobile?.touch || !S) return;
+    document.body.classList.toggle("targeting", !!S.placement || !!S.command);
+    if (S.placement) document.getElementById("tip").textContent = "Tap to preview; drag to pan. Build here confirms.";
+    else if (S.command) document.getElementById("tip").textContent = "Tap a destination, or Cancel to leave targeting.";
+    const selected = S.selected.filter((o) => o.hp > 0), owned = selected.filter((o) => o.f === 0);
+    document.body.classList.toggle("catalog-mode", !owned.some((o) => o.size === undefined));
+    document.body.classList.toggle("no-selection", !selected.length && !S.placement && !S.catalogPreview);
+    document.body.classList.toggle("has-troops", owned.some((o) => o.size === undefined));
+    document.getElementById("touchDeselect").disabled = !selected.length && !S.placement && !S.command;
+    document.getElementById("touchDeselect").textContent = selected.length ? `Deselect (${selected.length})` : "Deselect";
+    const info = document.getElementById("touchInfo");
+    info.classList.toggle("hidden", !selected.length && !S.placement);
+    info.textContent = S.placement ? `${defs[S.placement].name} · Info` : selected.length === 1
+      ? `${(selected[0].size === undefined ? udefs : defs)[selected[0].type].name} · Info`
+      : `${selected.length} selected · Info`;
+    info.setAttribute("aria-expanded", String(document.body.classList.contains("panel-open")));
+    document.getElementById("pause").textContent = S.paused ? "Resume" : "Pause";
+    document.getElementById("pause").disabled = S.ended;
+    const active = canCommand(), troops = owned.some((o) => o.size === undefined);
+    document.getElementById("touchOrder").disabled = !active || !(troops || owned.some((o) => o.size !== undefined && unitByBuilding[o.type]));
+    document.getElementById("touchAttack").disabled = !active || !troops;
+    document.getElementById("touchStop").disabled = !active || !troops;
+    document.getElementById("touchArmy").disabled = !active || !S.units.some((u) => u.f === 0 && u.hp > 0 && u.type !== "worker");
+    const bar = document.getElementById("touchPlacementBar"), confirm = document.getElementById("touchConfirmBuild");
+    bar.classList.toggle("hidden", !S.placement && !S.command);
+    confirm.classList.toggle("hidden", !S.placement);
+    confirm.disabled = !active || !S.placement || !touchPlacement ||
+      !validPlace(S.placement, touchPlacement.x, touchPlacement.y) || !canPay(S.factions[0], defs[S.placement].cost);
+    document.getElementById("touchPlacementStatus").textContent = S.placement
+      ? `${defs[S.placement].name}: ${!active ? "resume to build" : !canPay(S.factions[0], defs[S.placement].cost) ? "not enough resources" : !touchPlacement ? "tap to aim" : confirm.disabled ? "choose open land near your base" : "ready to build"}`
+      : `${S.command === "attack" ? "Attack-move" : S.command === "enter" ? "Enter building" : "Rally"}: tap destination`;
+    document.getElementById("touchActionsToggle").textContent = `${document.getElementById("actionTitle").textContent} ${document.body.classList.contains("rail-roster") ? "▾" : "▴"}`;
+    document.getElementById("touchActionsToggle").setAttribute("aria-expanded", String(document.body.classList.contains("rail-roster")));
+    const bounds = C.getBoundingClientRect();
+    if (Math.abs(bounds.width - viewport.w) > 0.5 || Math.abs(bounds.height - viewport.h) > 0.5) resize();
   }
   function cancelTouchCommand() {
     S.placement = null;
     S.command = null;
+    touchPlacement = null;
+    lastSelectionClick = null;
     mouse.down = false;
     setTouchMode("pan");
     updateUI();
-  }
-  function zoomAt(factor, x = viewport.w / 2, y = viewport.h / 2) {
-    const wx = camera.x + x / camera.z,
-      wy = camera.y + y / camera.z;
-    camera.z = clamp(camera.z * factor, world.fitZoom(viewport), 1.55);
-    camera.x = wx - x / camera.z;
-    camera.y = wy - y / camera.z;
-    fixCamera();
   }
   function selectBox(add = false) {
     const r = C.getBoundingClientRect(),
@@ -2081,6 +2424,7 @@
         u.y <= Math.max(y1, mouse.wy),
     );
     S.selected = add ? [...new Set([...S.selected, ...units])] : units;
+    lastSelectionClick = null;
     refreshActions();
     refreshDetails();
   }
@@ -2113,8 +2457,8 @@
     mouse.startY = e.clientY;
     mouse.camX = camera.x;
     mouse.camY = camera.y;
-    touchStartMode = touchMode;
-    mouse.button = touchMode === "select" && !S.placement && !S.command ? 2 : 0;
+    mouse.startedAt = performance.now();
+    mouse.button = 0;
   }
   function touchMove(e) {
     e.preventDefault();
@@ -2139,6 +2483,7 @@
     toWorld(e);
     const dx = e.clientX - mouse.startX,
       dy = e.clientY - mouse.startY;
+    if (!mouse.moved && performance.now() - mouse.startedAt >= 300 && !S.placement && !S.command) mouse.button = 2;
     if (Math.hypot(dx, dy) > 8) mouse.moved = true;
     if (mouse.moved && mouse.button === 0) {
       camera.x = mouse.camX - dx / camera.z;
@@ -2149,6 +2494,8 @@
   }
   function touchUp(e) {
     e.preventDefault();
+    window.RealmfrontMobile?.suppressCanvasClick?.(e.pointerId);
+    if (C.hasPointerCapture?.(e.pointerId)) C.releasePointerCapture(e.pointerId);
     touches.delete(e.pointerId);
     if (suppressTouch) {
       mouse.down = false;
@@ -2164,36 +2511,38 @@
     if (!canCommand()) return;
     if (mouse.moved) {
       if (mouse.button === 2 && !S.placement && !S.command) selectBox();
-      lastTouchTap = null;
+      lastSelectionClick = null;
       return;
     }
     if (S.placement) {
-      placeBuilding(mouse.wx, mouse.wy, repeatBuild);
+      touchPlacement = { x: Math.round(mouse.wx / 12) * 12, y: Math.round(mouse.wy / 12) * 12 };
+      updateTouchUI();
       return;
     }
     if (S.command) {
       issueMove(mouse.wx, mouse.wy, S.command === "attack");
       return;
     }
-    if (touchStartMode === "order") {
+    const obj = pick(mouse.wx, mouse.wy, 12 / camera.z);
+    const selectedTroops = S.selected.filter((o) => o.f === 0 && o.hp > 0 && o.size === undefined);
+    const workers = selectedTroops.some((u) => u.type === "worker");
+    const friendlyUnit = obj?.f === 0 && obj.size === undefined;
+    const buildingAction = obj?.f === 0 && obj.size !== undefined && workers &&
+      (workerSlots(obj) > 0 || obj.hp < obj.maxHp);
+    const friendlyBuilding = obj?.f === 0 && obj.size !== undefined;
+    if (obj && (friendlyUnit || (friendlyBuilding && !buildingAction))) {
+      selectClicked(obj);
+    } else if (performance.now() - mouse.startedAt >= 300) {
+      if (obj) selectClicked(obj);
+    } else if (selectedTroops.length) {
+      lastSelectionClick = null;
       issueMove(mouse.wx, mouse.wy);
-      return;
-    }
-    const obj = pick(mouse.wx, mouse.wy, 12 / camera.z),
-      now = performance.now();
-    if (obj && lastTouchTap?.id === obj.id && now - lastTouchTap.time < 350) {
-      selectSameType(obj);
-      lastTouchTap = null;
-      return;
-    }
-    lastTouchTap = obj ? { id: obj.id, time: now } : null;
-    if (touchStartMode === "select" && obj?.f === 0 && obj.size === undefined)
-      S.selected = S.selected.includes(obj)
-        ? S.selected.filter((u) => u !== obj)
-        : [...S.selected, obj];
-    else S.selected = obj ? [obj] : [];
-    refreshActions();
-    refreshDetails();
+    } else if (!obj && S.selected.some((o) => o.f === 0 && unitByBuilding[o.type])) {
+      lastSelectionClick = null;
+      issueMove(mouse.wx, mouse.wy);
+    } else if (obj) selectClicked(obj);
+    if (obj) document.body.classList.remove("rail-build", "rail-info", "map-open");
+    updateTouchUI();
   }
   for (const mode of ["pan", "select", "order"])
     document.getElementById(
@@ -2208,31 +2557,40 @@
     setTouchMode("order");
   };
   document.getElementById("touchStop").onclick = stopSelected;
-  document.getElementById("touchBuild").onclick = () => {
-    if (!canCommand()) return;
+  document.getElementById("touchActionsToggle").onclick = () => {
+    document.body.classList.remove("rail-info", "rail-build", "map-open");
+    document.body.classList.toggle("rail-roster"); updateTouchUI();
+  };
+  document.getElementById("touchDeselect").onclick = () => {
+    if (!S) return;
     S.selected = [];
+    document.body?.classList.remove("rail-info", "rail-build", "rail-roster", "map-open");
     cancelTouchCommand();
   };
-  document.getElementById("touchRepeat").onclick = () => {
-    repeatBuild = !repeatBuild;
-    updateTouchUI();
+  document.getElementById("touchInfo").onclick = () => {
+    document.body.classList.remove("map-open");
+    document.body.classList.toggle("panel-open"); updateTouchUI();
   };
-  document.getElementById("touchCancel").onclick = () => {
-    if (S) cancelTouchCommand();
+  document.getElementById("touchClosePanel").onclick = () => {
+    document.body.classList.remove("map-open", "panel-open"); updateTouchUI();
   };
-  document.getElementById("touchZoomIn").onclick = () => {
-    if (S) zoomAt(1.2);
+  document.getElementById("touchCancelPlacement").onclick = () => { if (S) cancelTouchCommand(); };
+  document.getElementById("touchConfirmBuild").onclick = () => {
+    if (!S?.placement || !touchPlacement) return;
+    if (placeBuilding(touchPlacement.x, touchPlacement.y, false)) touchPlacement = null;
+    updateUI();
   };
-  document.getElementById("touchZoomOut").onclick = () => {
-    if (S) zoomAt(1 / 1.2);
-  };
-  document.getElementById("touchBase").onclick = focusBase;
-  document.getElementById("touchMap").onclick = () => {
-    const open = document.body.classList.toggle("map-open");
-    document
-      .getElementById("touchMap")
-      .setAttribute("aria-pressed", String(open));
-  };
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(resize).observe(C.parentElement);
+  document.addEventListener?.("visibilitychange", () => {
+    if (!document.hidden || !window.RealmfrontMobile?.touch) return;
+    keys = {};
+    mouse.down = false;
+    touches.clear();
+    pinch = null;
+    suppressTouch = false;
+    lastSelectionClick = null;
+    if (S?.running && !S.paused && !S.ended) togglePause();
+  });
   window.addEventListener("realmfront:notice", (e) => message(e.detail));
   window.RealmfrontMobile?.setup(() => {
     if (window.RealmfrontMobile.blocked) {
@@ -2350,15 +2708,12 @@
     if (e.shiftKey && obj && obj.f === 0) {
       if (!S.selected.includes(obj)) S.selected.push(obj);
       else S.selected = S.selected.filter((v) => v !== obj);
-    } else S.selected = obj ? [obj] : [];
-    refreshActions();
-    refreshDetails();
+      lastSelectionClick = null;
+      refreshActions();
+      refreshDetails();
+    } else selectClicked(obj);
   });
-  C.addEventListener("dblclick", (e) => {
-    if (!S || S.ended || S.placement || S.command) return;
-    toWorld(e);
-    selectSameType(pick(mouse.wx, mouse.wy), e.shiftKey);
-  });
+  C.addEventListener("dblclick", (e) => e.preventDefault());
   C.addEventListener("pointercancel", () => {
     mouse.down = false;
     mouse.selecting = false;
@@ -2402,9 +2757,26 @@
       ).y,
     );
   });
+  let miniDragging = false;
+  mini.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch" || !S) return;
+    e.preventDefault();
+    miniDragging = true;
+    mini.setPointerCapture(e.pointerId);
+    miniNavigate(e);
+  });
+  function miniNavigate(e) {
+    const r = mini.getBoundingClientRect();
+    const p = world.fromMap(clamp((e.clientX - r.left) / r.width, 0, 1) * 300,
+      clamp((e.clientY - r.top) / r.height, 0, 1) * 182);
+    centerOn(p.x, p.y);
+  }
+  mini.addEventListener("pointermove", (e) => { if (miniDragging) { e.preventDefault(); miniNavigate(e); } });
+  mini.addEventListener("pointerup", () => { miniDragging = false; });
+  mini.addEventListener("pointercancel", () => { miniDragging = false; });
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") window.RealmfrontCheats?.close();
-    if (window.RealmfrontHelp?.isOpen || window.RealmfrontMobile?.blocked)
+    if (window.RealmfrontHelp?.isOpen || window.RealmfrontMobile?.blocked || window.RealmfrontMobile?.confirmingSale)
       return;
     if (
       ["SELECT", "INPUT", "TEXTAREA"].includes(document.activeElement.tagName)
@@ -2421,10 +2793,10 @@
       return;
     }
     if (key === "escape") {
-      S.placement = null;
-      S.command = null;
-      refreshActions();
-      updateUI();
+      S.selected = [];
+      mouse.selecting = false;
+      document.body?.classList.remove("panel-open", "map-open");
+      cancelTouchCommand();
       return;
     }
     if (key === "m") fitMap();
@@ -2454,7 +2826,11 @@
       e.preventDefault();
       upgradeSelected();
     }
-    if (key === "s" && !e.ctrlKey && !e.metaKey) {
+    if (key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      stopSelected();
+    }
+    if (key === "l" && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       sellSelected();
     }
@@ -2470,7 +2846,7 @@
   document.getElementById("attackMove").onclick = armAttackMove;
   document.getElementById("stopUnits").onclick = stopSelected;
   document.getElementById("centerBase").onclick = focusBase;
-  document.getElementById("fitMap").onclick = fitMap;
+  document.getElementById("fitMap").onclick = () => fullMapView ? focusBase() : fitMap();
   document.getElementById("pause").onclick = togglePause;
   document.getElementById("speed").onclick = () => {
     if (!S || S.ended) return;
@@ -2551,6 +2927,7 @@
       !S.paused &&
       !S.ended &&
       !window.RealmfrontHelp?.isOpen &&
+      !window.RealmfrontMobile?.confirmingSale &&
       !window.RealmfrontMobile?.blocked
     );
   }
@@ -2581,7 +2958,7 @@
     S.command = "attack";
     S.placement = null;
     updateUI();
-    message("Attack-move: click a destination");
+    message(`Attack-move: ${window.RealmfrontMobile?.touch ? "tap" : "click"} a destination`);
   }
   function stopSelected() {
     if (!canCommand()) return;
@@ -2622,8 +2999,10 @@
   }
   function cancelTraining(b) {
     if (!canCommand() || b.f !== 0 || !b.train.length) return;
-    const type = b.train.pop();
-    for (const [k, v] of Object.entries(udefs[type].cost))
+    const index = b.train.length - 1, type = b.train.pop(), info = b.queueInfo[index];
+    b.queueInfo.length = Math.min(b.queueInfo.length, b.train.length);
+    if (info?.worker) b.workers.push(info.worker);
+    for (const [k, v] of Object.entries(info?.cost || udefs[type].cost))
       S.factions[b.f].resources[k] += v;
     if (!b.train.length) b.progress = 0;
     message(`${udefs[type].name} refunded`);
@@ -2644,6 +3023,13 @@
   function simulateWorkerJob(u, dt) {
     const job = u.job,
       t = job.target;
+    if (job.kind === "enter") {
+      if (!canEnter(u, t)) { u.job = null; u.hold = true; return true; }
+      const reach = t.size * 0.6 + 10;
+      moveToward(u, t.x, t.y, dt, reach);
+      if (dist(u, t) <= reach + 3) enterBuilding(u, t);
+      return true;
+    }
     if (job.kind === "gather" && t.amount <= 0) {
       const next = nearest(
         S.nodes.filter((n) => n.amount > 0 && n.type === t.type),

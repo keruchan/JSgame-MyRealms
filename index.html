@@ -22,11 +22,11 @@
           <div class="stat"><small>Food</small><b id="food">—</b></div>
           <div class="stat"><small>Wood</small><b id="wood">—</b></div>
           <div class="stat"><small>Army</small><b id="pop">—</b></div>
-          <div id="timeStat" class="stat">
+          <button id="timeStat" class="stat" type="button" title="Elapsed game time">
             <small>Time</small><b id="clock">0:00</b>
-          </div>
+          </button>
         </div>
-        <div class="topright">
+        <div class="topright" id="gameToolbar" role="group" aria-label="Game controls">
           <span id="factionsAlive" class="pill">—</span
           ><button
             id="fitMap"
@@ -77,27 +77,23 @@
         <button id="touchArmy" type="button">Army</button>
         <button id="touchAttack" type="button">Attack</button>
         <button id="touchStop" type="button">Stop</button>
-        <button id="touchBuild" type="button">Build</button>
-        <button id="touchRepeat" type="button" aria-pressed="false">
-          Repeat build
-        </button>
-        <button id="touchCancel" type="button">Cancel</button>
-        <button id="touchZoomOut" type="button" aria-label="Zoom out">−</button>
-        <button id="touchZoomIn" type="button" aria-label="Zoom in">+</button>
-        <button id="touchBase" type="button">Base</button>
-        <button id="touchMap" type="button" aria-pressed="false">
-          Minimap
-        </button>
       </nav>
       <div class="main">
         <div class="worldwrap">
           <canvas id="game"></canvas>
+          <button id="touchDeselect" class="mobile-only touch-deselect" type="button">Deselect</button>
+          <button id="touchInfo" class="mobile-only touch-info hidden" type="button" aria-expanded="false" aria-controls="selectionPanel">Selection info</button>
+          <div id="touchPlacementBar" class="mobile-only touch-placement hidden">
+            <span id="touchPlacementStatus" role="status"></span>
+            <button id="touchConfirmBuild" type="button" disabled>Build here</button>
+            <button id="touchCancelPlacement" type="button">Cancel</button>
+          </div>
           <div class="hudtip" id="tip">
             <b>Left-drag</b> to pan · <b>Right-drag</b> to select · Scroll to
             zoom<br />
             Right-click to command · <b>A</b> then click to attack-move
           </div>
-          <div id="toast" class="toast"></div>
+          <div id="toast" class="toast" role="status" aria-live="polite"></div>
           <div
             id="cursorHint"
             class="cursor-hint hidden"
@@ -111,18 +107,21 @@
             PAUSED <small id="pauseHint">Space to resume</small>
           </div>
         </div>
-        <aside class="side">
-          <div class="sidehead">World Map</div>
+        <aside class="side" id="selectionPanel">
+          <div id="mobileUnitCommands" class="mobile-only rail-commands"></div>
+          <button id="touchClosePanel" class="mobile-only" type="button" aria-label="Close information panel">Close ×</button>
+          <div class="sidehead" id="worldMapHeading">World Map</div>
           <div class="miniwrap">
             <canvas id="minimap" width="300" height="182"></canvas>
             <div class="hint minimap-hint">Click map to move camera</div>
           </div>
-          <div class="sidehead">Selection</div>
+          <div class="sidehead" id="selectionHeading">Selection</div>
           <div class="panelpad" id="details">
             <div class="muted">
               Select a unit or building to view information and commands.
             </div>
           </div>
+          <div id="mobileActionHost" class="mobile-only mobile-action-host"></div>
         </aside>
       </div>
       <footer class="bottom">
@@ -139,17 +138,18 @@
           </button>
           <div class="order-buttons">
             <button id="attackMove" class="small">Attack [A]</button
-            ><button id="stopUnits" class="small">Stop</button>
+            ><button id="stopUnits" class="small">Stop [S]</button>
           </div>
           <div class="hint commander-hint">
-            Arrows pan · M full map<br />U upgrade · S sell · Ctrl+click repeat
-            build<br />Ctrl+1–9 save group · 1–9 recall
+            Arrows pan · M full map<br />U upgrade · S stop · L sell<br />
+            Ctrl+click repeat · Esc deselect<br />Ctrl+1–9 save group · 1–9 recall
           </div>
         </div>
         <div class="section">
           <div class="sectiontitle" id="actionTitle">
             Construction & Recruitment
           </div>
+          <button id="touchActionsToggle" class="mobile-only" type="button" aria-expanded="false" aria-controls="actions">Build &amp; recruit ▴</button>
           <div id="actions" class="buildgrid"></div>
         </div>
         <div class="section">
@@ -327,6 +327,16 @@
         </p>
       </div>
     </div>
+    <dialog id="touchSellDialog" class="mobile-sell-dialog" aria-labelledby="touchSellTitle">
+      <form method="dialog">
+        <h2 id="touchSellTitle">Sell selection?</h2>
+        <p id="touchSellDescription"></p>
+        <div class="sell-dialog-actions">
+          <button value="cancel" autofocus>Keep selection</button>
+          <button value="sell" class="danger">Sell selected</button>
+        </div>
+      </form>
+    </dialog>
     <script src="js/mobile.js" defer></script>
     <script src="js/world.js" defer></script>
     <script src="js/terrain.js" defer></script>

@@ -7,6 +7,31 @@ window.RealmfrontWorld = (() => {
     sea = 420;
   const totalWidth = width + sea * 2,
     totalHeight = height + sea * 2;
+  const perimeterLength = (inset = 0) => 2 * (width + height - inset * 4);
+  function perimeterPoint(distance, inset = 0) {
+    const w = width - inset * 2, h = height - inset * 2, length = 2 * (w + h);
+    let s = ((distance % length) + length) % length;
+    if (s <= w) return { x: inset + s, y: inset };
+    s -= w;
+    if (s <= h) return { x: width - inset, y: inset + s };
+    s -= h;
+    if (s <= w) return { x: width - inset - s, y: height - inset };
+    return { x: inset, y: height - inset - (s - w) };
+  }
+  function perimeterPosition(p, inset = 0) {
+    const w = width - inset * 2, h = height - inset * 2;
+    const edges = [
+      { distance: p.y - inset, position: p.x - inset },
+      { distance: width - inset - p.x, position: w + p.y - inset },
+      { distance: height - inset - p.y, position: w + h + width - inset - p.x },
+      { distance: p.x - inset, position: 2 * w + h + height - inset - p.y },
+    ];
+    return edges.sort((a, b) => a.distance - b.distance)[0].position;
+  }
+  function startingPositions(count) {
+    const inset = 650, length = perimeterLength(inset);
+    return Array.from({ length: count }, (_, i) => perimeterPoint(i * length / count, inset));
+  }
   const contains = (x, y, margin = 0) =>
     x >= margin && y >= margin && x <= width - margin && y <= height - margin;
   const fitZoom = (viewport) =>
@@ -88,6 +113,10 @@ window.RealmfrontWorld = (() => {
     width,
     height,
     sea,
+    perimeterLength,
+    perimeterPoint,
+    perimeterPosition,
+    startingPositions,
     totalWidth,
     totalHeight,
     contains,

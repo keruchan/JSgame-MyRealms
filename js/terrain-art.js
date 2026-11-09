@@ -108,7 +108,7 @@ window.RealmfrontTerrainArt = (() => {
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     for (const form of landforms) {
-      if (!cache.has(form)) cache.set(form, build(form, size));
+      if (!cache.has(form)) cache.set(form, build(form, form.tileSize || size));
       ctx.drawImage(cache.get(form), form.x - 16, form.y - 8);
     }
     ctx.restore();

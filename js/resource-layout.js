@@ -3,51 +3,23 @@
 window.RealmfrontResourceLayout = (() => {
   const terrain = window.RealmfrontTerrain;
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-  // Authored woodland locations leave substantial open valleys between groves.
-  const woodland = [
-    { x: 1900, y: 1400 }, { x: 5500, y: 1550 },
-    { x: 850, y: 2850 }, { x: 3850, y: 3550 },
-    { x: 4400, y: 950 }, { x: 1600, y: 4100 },
-    { x: 4900, y: 3150 }, { x: 2100, y: 850 },
-    { x: 5620, y: 3930 }, { x: 2700, y: 3600 },
-    { x: 3900, y: 650 },
-  ];
   function segmentDistance(p, a, b) {
     const dx = b.x - a.x, dy = b.y - a.y;
     const t = Math.max(0, Math.min(1,
       ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
     return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
   }
-  function routeMidpoint(a, b) {
-    const points = [a, ...(terrain.findPath(a, b) || [b])];
-    const lengths = points.slice(1).map((p, i) => distance(points[i], p));
-    let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
-    for (let i = 0; i < lengths.length; i++) {
-      if (remaining <= lengths[i]) {
-        const t = remaining / lengths[i];
-        return { x: points[i].x + (points[i + 1].x - points[i].x) * t,
-          y: points[i].y + (points[i + 1].y - points[i].y) * t };
-      }
-      remaining -= lengths[i];
-    }
-    return points.at(-1);
+  function routeDistance(a, b) {
+    const path = terrain.findPath(a, b);
+    if (!path) return Infinity;
+    let length = 0, previous = a;
+    for (const p of path) { length += distance(previous, p); previous = p; }
+    return length;
   }
-  // A minimum spanning tree identifies actual neighboring kingdoms, so an
-  // empty starting position does not receive a speculative gold expansion.
-  function borders(factions) {
-    const connected = new Set([0]), edges = [];
-    while (connected.size < factions.length) {
-      let best;
-      for (const i of connected)
-        for (let j = 0; j < factions.length; j++) {
-          if (connected.has(j)) continue;
-          const length = distance(factions[i], factions[j]);
-          if (!best || length < best.length) best = { a: factions[i], b: factions[j], j, length };
-        }
-      connected.add(best.j);
-      edges.push(best);
-    }
-    return edges;
+  function balanced(center, a, b, tolerance = 220) {
+    if (Math.abs(distance(center, a) - distance(center, b)) > 450) return false;
+    const left = routeDistance(a, center), right = routeDistance(b, center);
+    return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) <= tolerance;
   }
   function generate({ factions, buildings, outposts, roads, random = Math.random }) {
     const nodes = [], miningSites = [], forests = [];
@@ -68,8 +40,8 @@ window.RealmfrontResourceLayout = (() => {
           const center = { x: anchor.x + Math.cos(angle) * radius,
             y: anchor.y + Math.sin(angle) * radius };
           const points = offsets.map((p) => ({ x: center.x + p.x, y: center.y + p.y }));
-          if (terrain.isWalkable(center.x, center.y, 55) && allowed(center, points) &&
-            points.every((p) => free(p, type) && terrain.clearLine(center, p, 30))) return { center, points };
+          if (terrain.isWalkable(center.x, center.y, 55) &&
+            points.every((p) => free(p, type) && terrain.clearLine(center, p, 30)) && allowed(center, points)) return { center, points };
         }
       }
       throw new Error(`No safe ${type} site near ${anchor.x}, ${anchor.y}`);
@@ -94,18 +66,12 @@ window.RealmfrontResourceLayout = (() => {
     );
     const vein = [{ x: -95, y: 40 }, { x: 0, y: -65 }, { x: 95, y: 40 }];
     const contested = (center, points) => points.every((p) => factions.every((f) => distance(p, f) >= 600));
-    // Crossing veins are always present; the capture circle itself stays clear.
-    outposts.forEach((o, i) => gold(
-      { x: o.x + (i === 0 ? -280 : 280), y: o.y + (i === 1 ? -240 : 240) },
-      vein, `${o.name} gold`, "crossing", (center, points) =>
-        distance(center, o) <= 650 && contested(center, points),
-    ));
-    for (const { a, b } of borders(factions)) gold(
-      routeMidpoint(a, b), vein, "Frontier gold", "frontier",
-      (center, points) => contested(center, points) &&
-        Math.abs(distance(center, a) - distance(center, b)) <= 450,
-      null, [a.id, b.id],
-    );
+    // The coastal ring gives every kingdom two shared frontier expansions.
+    for (const frontier of terrain.landforms.filter((f) => f.role === "frontier")) {
+      const [a, b] = frontier.between.map((id) => factions.find((f) => f.id === id));
+      gold(frontier.gate, vein, "Frontier gold", "frontier",
+        (center, points) => contested(center, points) && balanced(center, a, b), null, [a.id, b.id]);
+    }
     function treeOffsets(count) {
       const phase = rand(0, Math.PI * 2), offsets = [{ x: 0, y: 0 }];
       for (let ring = 1; offsets.length < count; ring++) {
@@ -118,18 +84,29 @@ window.RealmfrontResourceLayout = (() => {
       }
       return offsets;
     }
-    function forest(anchor, count, area, allowed, owner = null) {
+    function forest(anchor, count, area, allowed, owner = null, neighbors = []) {
       const grove = pack(anchor, treeOffsets(count), "tree", (center, points) =>
-        forests.every((f) => distance(f, center) > 390) && allowed(center, points));
+        forests.every((f) => distance(f, center) > (area === "woodland" ? 340 : 390)) && allowed(center, points), 1536);
       const id = `forest-${forests.length}`;
       addNodes(grove.points, "tree", 1200, id, area);
-      forests.push({ ...grove.center, id, area, owner });
+      forests.push({ ...grove.center, id, area, owner, neighbors });
     }
     for (const f of factions) forest({ x: f.x + 260, y: f.y - 100 }, 12, "starter",
       (center) => distance(center, f) < 550, f.id);
-    const groveCount = 6 + Math.ceil(factions.length / 2);
-    for (const anchor of woodland.slice(0, groveCount)) forest(anchor, 18, "woodland",
-      (center) => factions.every((f) => distance(center, f) > 650));
+    for (const site of miningSites.filter((site) => site.area === "frontier")) {
+      const [a, b] = site.neighbors.map((id) => factions.find((f) => f.id === id));
+      const frontier = terrain.landforms.find((form) => form.role === "frontier" && form.between.every((id) => site.neighbors.includes(id)));
+      forest(frontier.forestAnchor, 18, "woodland",
+        (center) => factions.every((f) => distance(center, f) > 650) && balanced(center, a, b, 320), null, site.neighbors);
+    }
+    // Flexible central resources follow the equal frontier gold and woodland.
+    outposts.forEach((o, i) => gold(
+      { x: o.x + (i === 0 ? -280 : 280), y: o.y + (i === 1 ? -240 : 240) },
+      vein, `${o.name} gold`, "crossing", (center, points) =>
+        distance(center, o) <= 650 && contested(center, points),
+    ));
+    for (const crossing of outposts) forest({ x: crossing.x - 240, y: crossing.y - 320 }, 18, "woodland",
+      (center) => distance(center, crossing) <= 850 && factions.every((f) => distance(center, f) > 650));
     // One outlying tree per woodland, rather than a uniform scatter over the map.
     for (const grove of forests.filter((f) => f.area === "woodland")) {
       const solo = pack({ x: grove.x + 265, y: grove.y - 180 }, [{ x: 0, y: 0 }], "tree",

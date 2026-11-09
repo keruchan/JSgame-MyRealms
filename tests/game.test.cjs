@@ -85,7 +85,7 @@ function game() {
   let source = fs.readFileSync(path.join(root, "js/game.js"), "utf8");
   source = source.replace(
     "  // Startup",
-    `window.testGame = { get state(){return S}, init, tick, simulateUnits, simulateBuildings, simulateStrategy, issueMove, startResearch, train, cancelTraining, combatDamage, addUnit, addBuilding, updateUI, drawWorld, drawMini, frame, camera, mouse, stopSelected, togglePause, selectSameType, upgradeSelected, sellSelected, placeBuilding, upgradeCost, sellValue, capacity, fitMap, viewport, world, terrain, validPlace, moveToward, grantArmySlots, cursorAction, resourceAt };\n  // Startup`,
+    `window.testGame = { get state(){return S}, init, tick, simulateUnits, simulateBuildings, simulateStrategy, issueMove, startResearch, train, cancelTraining, combatDamage, addUnit, addBuilding, updateUI, drawWorld, drawMini, frame, camera, mouse, stopSelected, togglePause, selectSameType, selectClicked, upgradeSelected, sellSelected, placeBuilding, upgradeCost, sellValue, capacity, buildingIncome, enterBuilding, releaseWorker, trainingCost, pendingPop, hit, fitMap, viewport, world, terrain, validPlace, moveToward, grantArmySlots, cursorAction, resourceAt };\n  // Startup`,
   );
   vm.runInContext(source, sandbox);
   const api = sandbox.window.testGame;
@@ -103,6 +103,188 @@ function game() {
     },
   };
 }
+
+test("live HUD updates preserve action and selection command buttons", () => {
+  const g = game(), actions = g.document.getElementById("actions");
+  const first = actions._actionRows[0].btn;
+  g.state.factions[0].resources.wood = 0;
+  g.updateUI();
+  assert.equal(actions._actionRows[0].btn, first);
+  assert.equal(first.disabled, true);
+  g.state.selected = [g.state.units.find((u) => u.f === 0 && u.type === "sword")];
+  g.updateUI();
+  const commands = g.document.getElementById("detailCommands"), count = commands._commandRows.length;
+  const command = commands._commandRows[0];
+  for (let i = 0; i < 4; i++) g.updateUI();
+  assert.equal(commands._commandRows.length, count);
+  assert.equal(commands._commandRows[0], command);
+  g.togglePause();
+  assert(actions._actionRows.every((row) => row.btn.disabled));
+  assert(commands._commandRows.every((button) => button.disabled));
+});
+
+test("resource buildings produce exactly one per second without staff, even after upgrades", () => {
+  const g = game(), s = g.state, f = s.factions[0];
+  for (const b of s.buildings.filter((b) => b.f === 0)) b.level = 3;
+  f.tech.economy = 3;
+  s.difficulty = 2;
+  const before = { ...f.resources }, rival = { ...s.factions[1].resources };
+  g.simulateBuildings(1);
+  for (const resource of ["food", "wood", "gold"]) {
+    assert.equal(f.resources[resource] - before[resource], 1);
+    assert.equal(s.factions[1].resources[resource] - rival[resource], 1);
+  }
+});
+
+test("workers walk inside resource buildings, add income, occupy one slot, and can leave", () => {
+  const g = game(), s = g.state, f = s.factions[0];
+  const b = s.buildings.find((b) => b.f === 0 && b.type === "lumber");
+  const workers = s.units.filter((u) => u.f === 0 && u.type === "worker"), worker = workers[0], pop = f.pop;
+  s.selected = [worker];
+  g.issueMove(b.x, b.y);
+  assert.equal(worker.job.kind, "enter");
+  assert.equal(g.buildingIncome(b, "wood"), 1, "walking workers do not boost income");
+  assert.equal(g.enterBuilding(workers[1], b), false, "another worker's reservation cannot be stolen");
+  worker.x = b.x + b.size * 0.6 + 10;
+  worker.y = b.y;
+  g.simulateUnits(.1);
+  assert.equal(b.workers[0], worker);
+  assert(!s.units.includes(worker));
+  assert.equal(f.pop, pop);
+  assert.equal(s.selected[0], b);
+  assert.equal(g.buildingIncome(b, "wood"), 2);
+  assert.equal(g.enterBuilding(workers[1], b), false);
+  const wood = f.resources.wood;
+  g.simulateBuildings(1);
+  assert.equal(f.resources.wood - wood, 2);
+  b.level = 3;
+  f.tech.economy = 2;
+  assert.equal(g.buildingIncome(b, "wood"), 3.25);
+  g.releaseWorker(b, worker);
+  assert(s.units.includes(worker));
+  assert.equal(f.pop, pop);
+  assert.equal(g.buildingIncome(b, "wood"), 1);
+  assert(g.terrain.isWalkable(worker.x, worker.y, 30));
+});
+
+test("houses recruit workers with normal costs, queue reservations, and rally orders", () => {
+  const g = game(), s = g.state, f = s.factions[0], b = s.buildings.find((b) => b.f === 0 && b.type === "house");
+  const before = { ...f.resources }, pop = f.pop;
+  b.rally = { x: 800, y: 700 };
+  g.train(b, "worker");
+  assert.equal(f.resources.food, before.food - 30);
+  assert.equal(f.resources.gold, before.gold - 15);
+  assert.equal(g.pendingPop(0), 1);
+  g.train(b, "archer");
+  assert.equal(b.train.length, 1, "houses only recruit workers");
+  g.simulateBuildings(6.1);
+  const worker = s.units.at(-1);
+  assert.equal(worker.type, "worker");
+  assert.equal(f.pop, pop + 1);
+  assert.equal(worker.move.x, 800);
+  assert.equal(g.pendingPop(0), 0);
+});
+
+test("workers retrain into archers at full population using their existing slots and cost credit", () => {
+  const g = game(), s = g.state, f = s.factions[0], b = g.addBuilding(0, "range", 1000, 750, true);
+  f.resources = { food: 10000, gold: 10000, wood: 10000 };
+  const workers = s.units.filter((u) => u.f === 0 && u.type === "worker"), pop = f.pop;
+  for (const worker of workers) { worker.x = b.x; worker.y = b.y; assert(g.enterBuilding(worker, b)); }
+  const worker = workers[0], id = worker.id;
+  worker.hp = worker.maxHp / 2;
+  f.cap = pop;
+  b.rally = { x: 1100, y: 700 };
+  const before = { ...f.resources };
+  g.train(b, "archer");
+  assert.equal(b.train[0], "archer");
+  assert.equal(b.queueInfo[0].worker, worker);
+  assert.equal(f.resources.food, before.food - 10);
+  assert.equal(f.resources.gold, before.gold - 40);
+  assert.equal(g.pendingPop(0), 0);
+  g.simulateBuildings(9.1);
+  assert.equal(worker.type, "archer");
+  assert.equal(worker.id, id);
+  assert.equal(worker.hp, 41);
+  assert.equal(f.pop, pop);
+  assert.equal(s.units.filter((u) => u.id === id).length, 1);
+  assert.equal(worker.move.x, 1100);
+  assert.equal(worker.attackMove, true);
+  g.train(b, "spear");
+  assert.equal(b.train.length, 0, "unsupported roles cannot be trained");
+  g.train(b, "archer");
+  assert.equal(b.train.length, 1);
+  g.train(b, "archer");
+  assert.equal(b.train.length, 1, "ordinary recruitment still obeys capacity once waiting workers run out");
+});
+
+test("mixed training queues reserve only new units and retraining keeps the 100-unit ceiling", () => {
+  const g = game(), s = g.state, f = s.factions[0], b = g.addBuilding(0, "range", 1000, 750, true);
+  f.resources = { food: 10000, gold: 10000, wood: 10000 };
+  f.cap = 500; f.pop = 99;
+  g.train(b, "archer");
+  const worker = s.units.find((u) => u.f === 0 && u.type === "worker");
+  worker.x = b.x; worker.y = b.y; g.enterBuilding(worker, b);
+  g.train(b, "archer");
+  assert.equal(b.train.length, 2);
+  assert.equal(g.pendingPop(0), 1);
+  g.train(b, "archer");
+  assert.equal(b.train.length, 2);
+  s.cheats.fastTraining = true;
+  g.simulateBuildings(1);
+  assert.equal(f.pop, 100);
+  assert.equal(b.queueInfo[0].worker, worker);
+  g.simulateBuildings(1);
+  assert.equal(f.pop, 100);
+  assert.equal(worker.type, "archer");
+  assert.equal(b.train.length, 0);
+  assert.equal(g.pendingPop(0), 0);
+});
+
+test("canceling worker retraining refunds only its paid cost; selling releases waiting workers", () => {
+  const g = game(), s = g.state, f = s.factions[0], b = g.addBuilding(0, "range", 1000, 750, true);
+  f.resources = { food: 10000, gold: 10000, wood: 10000 };
+  const worker = s.units.find((u) => u.f === 0 && u.type === "worker"), pop = f.pop;
+  worker.x = b.x; worker.y = b.y; g.enterBuilding(worker, b);
+  const before = { ...f.resources };
+  g.train(b, "archer");
+  g.cancelTraining(b);
+  assert.equal(f.resources.food, before.food);
+  assert.equal(f.resources.gold, before.gold);
+  assert.equal(b.workers[0], worker);
+  assert.equal(f.pop, pop);
+  g.releaseWorker(b, worker);
+  g.train(b, "archer"); // ordinary recruit ahead of a worker conversion
+  worker.x = b.x; worker.y = b.y; g.enterBuilding(worker, b);
+  g.train(b, "archer");
+  assert.equal(g.pendingPop(0), 1);
+  b.progress = 3;
+  const refund = g.sellValue(b);
+  s.selected = [b];
+  g.sellSelected();
+  assert.equal(f.resources.food, before.food + (refund.food || 0));
+  assert.equal(f.resources.gold, before.gold + refund.gold);
+  assert.equal(f.resources.wood, before.wood + refund.wood);
+  assert.equal(f.pop, pop);
+  assert(s.units.includes(worker));
+  assert.equal(b.train.length, 0);
+  assert.equal(b.queueInfo.length, 0);
+});
+
+test("destroyed training buildings release workers without refunding lost training", () => {
+  const g = game(), s = g.state, f = s.factions[0], b = g.addBuilding(0, "range", 1000, 750, true);
+  const worker = s.units.find((u) => u.f === 0 && u.type === "worker"), pop = f.pop;
+  worker.x = b.x; worker.y = b.y; g.enterBuilding(worker, b);
+  g.train(b, "archer");
+  const gold = f.resources.gold;
+  g.hit(b, b.maxHp + 1, 1);
+  assert.equal(f.resources.gold, gold);
+  assert.equal(f.pop, pop);
+  assert(s.units.includes(worker));
+  assert.equal(worker.type, "worker");
+  assert.equal(b.queueInfo.length, 0);
+  g.simulateBuildings(.1);
+  assert.equal(s.units.filter((u) => u.id === worker.id).length, 1);
+});
 
 test("recruitment refund, queue limit, population reservation, and rally orders", () => {
   const g = game(),
@@ -206,14 +388,15 @@ test("cheat army slots unlock recruitment without houses, cap at 100, and reset 
 test("archers and crossbowmen stand and fire instead of retreating from nearby enemies", () => {
   for (const type of ["archer", "crossbow"]) {
     const g = game();
-    const unit = g.addUnit(0, type, 1500, 900, true);
-    const enemy = g.addUnit(1, "worker", 1550, 900, true);
+    const position = { x: g.state.factions[0].x + 350, y: g.state.factions[0].y - 250 };
+    const unit = g.addUnit(0, type, position.x, position.y, true);
+    const enemy = g.addUnit(1, "worker", position.x + 50, position.y, true);
     enemy.hold = true;
     unit.target = enemy;
     unit.attackTimer = 0;
     for (let i = 0; i < 10; i++) g.simulateUnits(0.05);
-    assert.equal(unit.x, 1500);
-    assert.equal(unit.y, 900);
+    assert.equal(unit.x, position.x);
+    assert.equal(unit.y, position.y);
     assert(g.state.shots.some((shot) => shot.f === 0 && shot.to === enemy));
   }
 });
@@ -551,7 +734,34 @@ test("downloaded sprite checksums and animation crops match every faction and ro
   );
 });
 
-test("double-click selection matches type, ownership, and entity kind across the map", () => {
+test("unit clicks select one, all fighters, then workers; worker doubles select only workers", () => {
+  const g = game(), s = g.state;
+  const fighter = s.units.find((u) => u.f === 0 && u.type === "sword");
+  g.addUnit(0, "guard", 900, 700, true);
+  const enemy = g.addUnit(1, "sword", 1000, 700, true);
+  const dead = g.addUnit(0, "archer", 950, 700, true); dead.hp = 0;
+  g.selectClicked(fighter);
+  assert.equal(s.selected.length, 1);
+  assert.equal(s.selected[0], fighter);
+  g.advanceTime(120); g.selectClicked(fighter);
+  assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.hp > 0 && u.type !== "worker").length);
+  assert(s.selected.every((u) => u.type !== "worker" && u !== enemy && u !== dead));
+  g.advanceTime(120); g.selectClicked(fighter);
+  assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.hp > 0).length);
+  assert(s.selected.some((u) => u.type === "worker"));
+  g.advanceTime(600); g.selectClicked(fighter);
+  assert.equal(s.selected.length, 1);
+  const worker = s.units.find((u) => u.f === 0 && u.type === "worker");
+  g.selectClicked(worker);
+  assert.equal(s.selected.length, 1);
+  g.advanceTime(120); g.selectClicked(worker);
+  assert.equal(s.selected.length, s.units.filter((u) => u.f === 0 && u.type === "worker" && u.hp > 0).length);
+  assert(s.selected.every((u) => u.type === "worker"));
+  g.document.getElementById("touchDeselect").onclick();
+  assert.equal(s.selected.length, 0);
+});
+
+test("same-type building selection preserves ownership and entity kind across the map", () => {
   const g = game(),
     s = g.state;
   const u = s.units.find((o) => o.f === 0 && o.type === "sword");
@@ -627,21 +837,57 @@ test("selling upgraded buildings removes exact capacity and refunds queued recru
   assert.equal(f.resources.gold, after);
 });
 
-test("S sells instead of panning; U upgrades and shortcuts ignore text fields", () => {
+test("S stops without selling; L sells; U upgrades; shortcuts ignore text fields", () => {
   const g = game(),
     s = g.state,
     u = s.units.find((o) => o.f === 0 && o.type === "sword");
   s.selected = [u];
   const key = (k) => g.listeners.keydown({ key: k, preventDefault() {} });
+  const resources = { ...s.factions[0].resources }, camera = { ...g.camera };
+  g.issueMove(900, 750);
+  assert(u.move);
+  key("s");
+  assert.equal(u.move, null);
+  assert.equal(u.hold, true);
+  assert(u.hp > 0 && s.units.includes(u));
+  assert.deepEqual({ ...s.factions[0].resources }, resources);
+  assert.equal(g.camera.x, camera.x);
+  assert.equal(g.camera.y, camera.y);
   key("u");
   assert.equal(u.level, 2);
+  g.issueMove(900, 750);
   g.document.activeElement.tagName = "INPUT";
   key("s");
-  assert(u.hp > 0);
+  key("l");
+  assert(u.hp > 0 && u.move);
   g.document.activeElement.tagName = "BODY";
-  key("s");
+  key("S");
+  assert.equal(u.move, null);
+  assert(u.hp > 0);
+  key("L");
   assert.equal(u.hp, 0);
   assert(!s.units.includes(u));
+});
+
+test("Escape deselects and cancels targeting/placement without stopping orders or deleting groups", () => {
+  const g = game(), s = g.state, u = s.units.find((o) => o.f === 0 && o.type === "sword");
+  s.selected = [u];
+  g.issueMove(900, 750);
+  const destination = u.move;
+  s.groups[1] = [u.id];
+  s.command = "attack";
+  g.listeners.keydown({ key: "Escape", preventDefault() {} });
+  assert.equal(s.selected.length, 0);
+  assert.equal(s.command, null);
+  assert.equal(u.move, destination);
+  assert.equal(s.groups[1][0], u.id);
+  s.selected = [s.buildings.find((b) => b.f === 0)];
+  s.placement = "house";
+  s.paused = true;
+  g.listeners.keydown({ key: "Escape", preventDefault() {} });
+  assert.equal(s.selected.length, 0);
+  assert.equal(s.placement, null);
+  assert.equal(s.paused, true);
 });
 
 test("repeat placement keeps its type, each click pays, and sea/invalid clicks never charge", () => {
@@ -687,6 +933,17 @@ test("doubled island fits completely, camera centers letterboxing, and sea rejec
     assert(g.camera.y <= -w.sea + 0.0001);
     assert(g.camera.x + width / g.camera.z >= w.width + w.sea - 0.0001);
     assert(g.camera.y + height / g.camera.z >= w.height + w.sea - 0.0001);
+    const mapButton = g.document.getElementById("fitMap");
+    assert.equal(mapButton.textContent, "Base [H]");
+    mapButton.onclick();
+    assert.equal(mapButton.textContent, "Full Map [M]");
+    assert(g.camera.z >= 0.9, "Base restores a useful local zoom");
+    const base = s.factions[0];
+    assert(base.x >= g.camera.x && base.x <= g.camera.x + width / g.camera.z);
+    assert(base.y >= g.camera.y && base.y <= g.camera.y + height / g.camera.z);
+    mapButton.onclick();
+    assert.equal(mapButton.textContent, "Base [H]");
+    assert(Math.abs(g.camera.z - w.fitZoom(g.viewport)) < 1e-6);
     const p = w.mapPoint(1234, 456),
       q = w.fromMap(p.x, p.y);
     assert(Math.abs(q.x - 1234) < 0.0001 && Math.abs(q.y - 456) < 0.0001);
@@ -699,16 +956,17 @@ test("doubled island fits completely, camera centers letterboxing, and sea rejec
   assert(w.contains(u.x, u.y, 10));
 });
 
-test("purchase cards and placement panels contain actual descriptions", () => {
+test("purchase cards use brief summaries and put full descriptions in the details panel", () => {
   const g = game(),
     s = g.state;
   const cards = g.document.getElementById("actions").children;
+  assert(g.document.getElementById("details").innerHTML.includes("Produces 1 food/s. One worker can enter"));
   assert(
     cards.some((card) =>
       card.children.some(
         (child) =>
           child.className === "action-description" &&
-          child.textContent.includes("food automatically"),
+          child.textContent.includes("1 food/s"),
       ),
     ),
   );
@@ -717,7 +975,7 @@ test("purchase cards and placement panels contain actual descriptions", () => {
   assert(
     g.document
       .getElementById("details")
-      .innerHTML.includes("Generates food automatically."),
+      .innerHTML.includes("Produces 1 food/s."),
   );
   const hall = s.buildings.find((o) => o.f === 0 && o.type === "hall");
   s.placement = null;
@@ -730,10 +988,20 @@ test("purchase cards and placement panels contain actual descriptions", () => {
         card.children.some(
           (child) =>
             child.className === "action-description" &&
-            child.textContent.includes("Gathers wild resources"),
+            child.textContent.includes("Gathers resources"),
         ),
       ),
   );
+  const workerCard = g.document.getElementById("actions")._actionRows[0];
+  assert(workerCard.description.textContent.length <= 24);
+  const resources = { ...s.factions[0].resources }, queueLength = hall.train.length;
+  workerCard.btn.onclick();
+  assert(g.document.getElementById("details").innerHTML.includes("Gathers wild resources; repairs, staffs buildings, or retrains."));
+  assert.equal(hall.train.length, queueLength, "inspecting a unit does not queue it");
+  assert.deepEqual({ ...s.factions[0].resources }, resources, "inspecting a unit does not spend resources");
+  assert(g.document.getElementById("details").innerHTML.includes('id="catalogTrain"'));
+  g.document.getElementById("catalogTrain").onclick();
+  assert.equal(hall.train.length, queueLength + 1, "the separate Train button queues the inspected unit");
 });
 
 test("building artwork preserves original assets and draws valid crops for every type and faction", () => {
@@ -844,14 +1112,20 @@ test("terrain art preserves source files, draws valid crops, and reuses landform
 
 test("resources scale with kingdoms and form safe starter groves and contested gold veins", () => {
   const g = game();
+  const routeLength = (a, b) => {
+    const path = g.terrain.findPath(a, b); assert(path);
+    let length = 0, previous = a;
+    for (const p of path) { length += Math.hypot(p.x - previous.x, p.y - previous.y); previous = p; }
+    return length;
+  };
   for (let enemies = 2; enemies <= 9; enemies++) {
     g.document.getElementById("enemyCount").value = String(enemies);
     g.init();
     const s = g.state, kingdoms = enemies + 1;
     const ores = s.nodes.filter((n) => n.type === "ore");
-    assert.equal(ores.length, 5 * kingdoms + 6);
+    assert.equal(ores.length, 5 * kingdoms + 9);
     assert.equal(s.miningSites.filter((site) => site.area === "crossing").length, 3);
-    assert.equal(s.miningSites.filter((site) => site.area === "frontier").length, kingdoms - 1);
+    assert.equal(s.miningSites.filter((site) => site.area === "frontier").length, kingdoms);
     for (const f of s.factions) {
       const site = s.miningSites.find((site) => site.owner === f.id);
       const grove = s.forests.find((grove) => grove.owner === f.id);
@@ -861,6 +1135,8 @@ test("resources scale with kingdoms and form safe starter groves and contested g
       assert.equal(s.nodes.filter((n) => n.group === grove.id).length, 12);
       assert(Math.hypot(site.x - f.x, site.y - f.y) < 490);
       assert(Math.hypot(grove.x - f.x, grove.y - f.y) < 550);
+      assert.equal(s.miningSites.filter((site) => site.neighbors.includes(f.id)).length, 2, "each kingdom shares two gold expansions");
+      assert.equal(s.forests.filter((site) => site.neighbors.includes(f.id)).length, 2, "each kingdom shares two forest expansions");
     }
     for (const site of s.miningSites.filter((site) => site.area !== "starter")) {
       const vein = ores.filter((n) => n.group === site.id);
@@ -869,12 +1145,21 @@ test("resources scale with kingdoms and form safe starter groves and contested g
       for (const n of vein)
         assert(s.factions.every((f) => Math.hypot(n.x - f.x, n.y - f.y) >= 600));
       for (const id of site.neighbors) assert(g.terrain.findPath(s.factions[id], site)?.length);
+      if (site.neighbors.length) {
+        const [a, b] = site.neighbors.map((id) => s.factions[id]);
+        assert(Math.abs(routeLength(a, site) - routeLength(b, site)) <= 220.001, "shared gold has similar walking distance for both neighbors");
+      }
     }
     const trees = s.nodes.filter((n) => n.type === "tree");
     assert(trees.filter((n) => n.area === "outlier").length < trees.length * 0.1);
     for (const grove of s.forests) {
       const members = trees.filter((n) => n.group === grove.id);
       assert(members.every((n) => Math.hypot(n.x - grove.x, n.y - grove.y) < 125));
+      assert.equal(members.length, grove.area === "starter" ? 12 : 18);
+      if (grove.neighbors.length) {
+        const [a, b] = grove.neighbors.map((id) => s.factions[id]);
+        assert(Math.abs(routeLength(a, grove) - routeLength(b, grove)) <= 320.001, "shared woodland has similar walking distance for both neighbors");
+      }
     }
     for (const n of s.nodes) {
       assert(g.terrain.isWalkable(n.x, n.y, 55));
@@ -896,26 +1181,44 @@ test("resources scale with kingdoms and form safe starter groves and contested g
 
 test("terrain rebuilds for every player count with elongated ridges and connected routes", () => {
   const g = game();
-  const averages = [];
+  const averages = [], amounts = [], ridgeLengths = [];
   let previous;
   for (let enemies = 2; enemies <= 9; enemies++) {
     g.document.getElementById("enemyCount").value = String(enemies);
     g.init();
     const t = g.terrain, s = g.state, kingdoms = enemies + 1;
     assert.equal(t.playerCount, kingdoms);
-    assert.equal(t.landforms.length, 9 + Math.round((kingdoms - 3) * 3 / 7));
+    assert.equal(t.landforms.filter((form) => form.role === "frontier").length, kingdoms);
+    assert(t.landforms.filter((form) => form.role === "interior").length >= 9);
     assert.notEqual(t.obstacles, previous, "restart replaces collision footprints");
     previous = t.obstacles;
     const lengths = [];
     let elongated = 0;
-    for (const form of t.landforms) {
+    for (const form of t.landforms.filter((form) => form.role === "interior")) {
       const width = Math.max(...form.rows.map(([inset, width]) => inset + width)) * t.tileSize;
       const height = form.rows.reduce((sum, [, , depth]) => sum + depth, 0) * t.tileSize;
       lengths.push(Math.max(width, height));
       if (Math.max(width, height) / Math.min(width, height) >= 2.5) elongated++;
     }
-    assert(elongated >= Math.ceil(t.landforms.length * 0.8));
+    assert(elongated >= Math.ceil(lengths.length * 0.8));
     averages.push(lengths.reduce((sum, length) => sum + length, 0) / lengths.length);
+    amounts.push(t.landforms.length);
+    ridgeLengths.push(lengths.reduce((sum, length) => sum + length, 0) + t.landforms.filter((form) => form.role === "frontier").reduce((sum, form) => sum + Math.hypot(form.gate.x - form.anchor.x, form.gate.y - form.anchor.y) - 220, 0));
+    for (const form of t.landforms.filter((form) => form.role === "frontier")) {
+      const [a, b] = form.between.map((id) => s.factions[id]);
+      assert(Math.abs(Math.hypot(a.x - form.anchor.x, a.y - form.anchor.y) - Math.hypot(b.x - form.anchor.x, b.y - form.anchor.y)) < 0.001, "frontier starts equally far from its neighbors");
+      assert(t.clearLine(a, form.gate, 30) && t.clearLine(b, form.gate, 30), "both neighbors have a clear approach to their frontier pass");
+      const position = g.world.perimeterPosition(form.anchor);
+      const coastPoint = (offset) => {
+        const p = g.world.perimeterPoint(position + offset);
+        return t.nearestWalkable(Math.max(64, Math.min(g.world.width - 64, p.x)), Math.max(64, Math.min(g.world.height - 64, p.y)));
+      };
+      const from = coastPoint(-180), to = coastPoint(180);
+      assert(!t.clearLine(from, to, 30), "frontier blocks the direct coastal shortcut");
+      const route = t.findPath(from, to); assert(route);
+      const depth = (p) => Math.min(p.x, p.y, g.world.width - p.x, g.world.height - p.y);
+      assert(route.some((p) => depth(p) >= (10 + Math.ceil((kingdoms - 3) / 2)) * 96 - 96), "coastal routes must go inland around the barrier");
+    }
     for (const o of t.obstacles) {
       assert(t.isWalkable(o.x + o.w / 2, o.y + o.h / 2, 0) === false);
       for (const f of s.factions) {
@@ -935,7 +1238,27 @@ test("terrain rebuilds for every player count with elongated ridges and connecte
       assert(Math.hypot(previousPoint.x - crossing.x, previousPoint.y - crossing.y) < 1);
     }
   }
-  assert(averages[0] > averages.at(-1) * 1.4, "crowded matches have substantially shorter ranges");
+  assert(averages[0] > averages.at(-1) * 1.4, "crowded matches use more, shorter interior ranges");
+  assert(amounts.at(-1) > amounts[0] * 1.5 && ridgeLengths.at(-1) > ridgeLengths[0] * 1.2, "large matches add more formations and more total barrier length");
+});
+
+test("starting positions balance all player counts around the island", () => {
+  const w = game().world;
+  for (let count = 3; count <= 10; count++) {
+    const starts = w.startingPositions(count), step = w.perimeterLength(650) / count;
+    for (let i = 0; i < count; i++) {
+      const p = starts[i]; assert(w.contains(p.x, p.y, 650));
+      const position = w.perimeterPosition(p, 650);
+      assert(Math.abs(position - i * step) < 0.001, "equal spacing along the inset coast");
+      for (const other of starts.slice(i + 1)) assert(Math.hypot(p.x - other.x, p.y - other.y) >= 1390);
+      if (count % 2 === 0) {
+        const opposite = starts[(i + count / 2) % count];
+        assert(Math.abs(p.x + opposite.x - w.width) < 0.001 && Math.abs(p.y + opposite.y - w.height) < 0.001, "even-sized matches have opposite mirrored starts");
+      }
+    }
+    const upper = starts.filter((p) => p.y < w.height / 2).length, lower = starts.filter((p) => p.y > w.height / 2).length;
+    assert(Math.abs(upper - lower) <= 1, "starts are not concentrated in the lower half");
+  }
 });
 
 test("nine enemies have safe settlements, unique colors, and reachable crossings", () => {
@@ -966,21 +1289,21 @@ test("nine enemies have safe settlements, unique colors, and reachable crossings
 });
 
 test("units route around stepped highlands without cutting corners or crossing hollows", () => {
-  const g = game(),
-    t = g.terrain,
-    u = g.addUnit(0, "cavalry", 1100, 2350, true);
-  assert.equal(t.clearLine(u, { x: 1900, y: 2350 }, 30), false);
+  const g = game(), t = g.terrain, frontier = t.landforms.find((f) => f.role === "frontier" && f.edge === "north");
+  const start = t.nearestWalkable(frontier.anchor.x - 180, 64), goal = t.nearestWalkable(frontier.anchor.x + 180, 64);
+  const u = g.addUnit(0, "cavalry", start.x, start.y, true);
+  assert.equal(t.clearLine(u, goal, 30), false);
   let arrived = false,
     detour = 0;
   for (let i = 0; i < 1500 && !arrived; i++) {
     const previous = { x: u.x, y: u.y };
-    arrived = g.moveToward(u, 1900, 2350, 0.05, 4);
+    arrived = g.moveToward(u, goal.x, goal.y, 0.05, 4);
     assert(t.isWalkable(u.x, u.y, 30));
     assert(t.clearLine(previous, u, 30));
-    detour = Math.max(detour, Math.abs(u.y - 2350));
+    detour = Math.max(detour, Math.abs(u.y - start.y));
   }
   assert(arrived, "unit reaches the destination after navigating the ridge");
-  assert(detour > 330);
+  assert(detour > 800);
 });
 
 test("orders snap off cliffs, construction rejects obstacles, and separation stays on land", () => {
@@ -1067,6 +1390,31 @@ test("resource sprite crops remain valid through idle, harvesting, and depleted 
   assert.equal(art.draw(ctx, { type: "tree" }, 0), false);
 });
 
+test("action cursors load distinct full-size artwork with valid tool hotspots", () => {
+  const sandbox = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(root, "js/cursors.js"), "utf8"), sandbox);
+  const { apply, cursors } = sandbox.window.RealmfrontCursors;
+  const canvas = { dataset: {}, style: {} }, hint = {
+    classList: { toggle() {} }, style: {}, textContent: "",
+  };
+  const point = { inside: true, x: 50, y: 50, width: 500, height: 300 };
+  assert.equal(Object.keys(cursors).length, 12);
+  for (const [kind, cursor] of Object.entries(cursors)) {
+    const svg = fs.readFileSync(path.join(root, "assets/cursors", `${kind}.svg`), "utf8");
+    const width = Number(svg.match(/width="(\d+)"/)[1]);
+    const height = Number(svg.match(/height="(\d+)"/)[1]);
+    assert.equal(width, 40);
+    assert.equal(height, 40);
+    assert(cursor.x >= 0 && cursor.x < width && cursor.y >= 0 && cursor.y < height);
+    assert(!svg.includes("M3 2 4 24 10 19"), "old shared arrow is removed");
+    apply(canvas, hint, { kind, label: kind }, point);
+    assert.equal(canvas.dataset.cursor, kind);
+    assert.equal(canvas.style.cursor, `url("assets/cursors/${kind}.svg") ${cursor.x} ${cursor.y}, ${cursor.fallback}`);
+  }
+  apply(canvas, hint, { kind: "unknown", label: "" }, point);
+  assert.equal(canvas.dataset.cursor, "default");
+});
+
 test("cursor intent follows selection, lumber, mining, repair, attack, and blocked ground", () => {
   const g = game(),
     s = g.state,
@@ -1099,8 +1447,9 @@ test("cursor intent follows selection, lumber, mining, repair, attack, and block
   g.mouse.wx = 900;
   g.mouse.wy = 800;
   assert.equal(g.cursorAction().kind, "move");
-  g.mouse.wx = 1500;
-  g.mouse.wy = 2000;
+  const obstacle = g.terrain.obstacles.find((o) => o.x > 500 && o.y > 500);
+  g.mouse.wx = obstacle.x + obstacle.w / 2;
+  g.mouse.wy = obstacle.y + obstacle.h / 2;
   assert.equal(g.cursorAction().kind, "blocked");
   s.command = "attack";
   assert.equal(g.cursorAction().kind, "attack");

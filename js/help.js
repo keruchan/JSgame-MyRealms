@@ -19,6 +19,14 @@ window.RealmfrontHelp = (() => {
     `<article class="guide-entry">${icon}<div class="guide-entry-copy"><p class="guide-description"><strong>${name}</strong> — ${description}</p><div class="guide-stats">${stats}</div>${extra ? `<p class="guide-extra">${extra}</p>` : ""}</div></article>`;
   const mechanics = [
     [
+      "Building income and worker staffing",
+      "Each Farm produces exactly 1 food/s, Lumber Camp 1 wood/s, and Gold Mine 1 gold/s without staff. One worker can enter each resource building to add 1/s before bonuses. Right-click a healthy friendly building with workers selected, or use Enter building and choose it; a normal right-click on a damaged building repairs it first. The bonus begins only once the worker arrives inside. Worker levels add 20% per level to the bonus; building upgrades and Improved Tools add 25% per level to the bonus, without increasing the unstaffed base. Select the building to see income and worker spaces, or use Release workers. Inside workers still count toward population. A W badge marks occupied buildings. Rivals also staff their resource buildings.",
+    ],
+    [
+      "Workers, houses, and military retraining",
+      "Both Houses and Town Halls recruit workers for 30 food and 15 gold, taking 6 seconds at base speed. Military buildings accept up to five waiting or retraining workers. Send workers inside, select the building, then choose a military unit card: a waiting worker retrains into that role first. Its existing population slot is reused, and the base worker price is credited against the new role's cost. For example, an Archer conversion costs 10 food and 40 gold and takes the usual 9 seconds. Unit level and health proportion are preserved. Empty military buildings still offer ordinary recruitment at full cost and population requirements. Conversion and normal recruitment share the five-entry queue. Cancel Last Recruit refunds the amount paid and returns a converting worker to the building's waiting workers. Release workers lets waiting workers leave. Selling or destruction returns occupants safely outside; selling refunds paid queue costs, while destruction loses them.",
+    ],
+    [
       "Forests and contested gold",
       "Trees grow in compact forests with a few outlying trees, leaving open valleys and clear roads. Each kingdom starts beside a 12-tree grove and two gold deposits holding 1,200 gold each. Richer veins contain three deposits of 2,400 gold each: one vein near each crossing, plus frontier veins between neighboring active kingdoms. Total gold deposits scale from 21 with two enemies to 56 with nine enemies. Expand toward these veins and defend your miners; gold deposits are shared gathering sites, and do not transfer ownership when a crossing is captured. Resources stay clear of starting buildings, roads, cliffs, and capture circles.",
     ],
@@ -32,7 +40,7 @@ window.RealmfrontHelp = (() => {
     ],
     [
       "Mobile, landscape, and fullscreen",
-      "Phones and tablets must be in landscape. Portrait mode holds the battle behind a rotate prompt without changing your pause setting. Fullscreen buttons expand the game where supported and try to lock landscape; if the browser cannot lock orientation, rotate manually. Use the touch toolbar: Pan drags the map; Select drags a selection box or taps friendly units to add/remove them; Order taps a destination to move, attack, gather, repair, or set rally points. Pinch or use + / − to zoom. Army, Attack, Stop, Base, and Minimap replace keyboard shortcuts. Build opens construction; Repeat build keeps placement active; Cancel clears targeting or placement. Upgrade and Sell remain in the selection panel. Swipe the toolbar and construction cards horizontally for more options.",
+      "Phones and tablets must be in landscape. The battlefield stays on the left, with selection details and build/recruit cards on the right. Hold one finger still for 0.3 seconds, then drag a box to select friendly units. A quick drag pans the map; two fingers pan and pinch to zoom. Tap a friendly unit to select it. With units selected, tap empty ground to move, enemies to attack, or resources to gather with workers. Workers can tap friendly buildings to repair or enter them. Deselect clears the selection and targeting. Use the right panel's Attack and Stop buttons and scroll details for more commands. Deselect returns to the construction roster. Equal-sized cards show icons, costs, and brief summaries; full descriptions and base stats appear above. Tap a building card to start placement. Tap a unit card to view details without buying; press Train beside its name to queue one recruit or worker conversion. Unavailable units remain inspectable; Train shows the blocking reason. Building info & commands restores a training building's controls from a recruit preview. The top bar provides a Full Map/Base toggle, speed, Pause/Resume, Fullscreen, and Help. Full Map shows the entire island; Base returns to your home base at local zoom. Unlocking cheats adds Cheats at the far right. Construction remains tap-to-preview, then Build here to confirm. Backgrounding pauses until Resume; rotating to portrait preserves manual pause.",
     ],
     [
       "Win the skirmish",
@@ -52,7 +60,7 @@ window.RealmfrontHelp = (() => {
     ],
     [
       "Army limit: 100",
-      "Workers and military units share population capacity. The Town Hall starts with 12 slots; each House adds 8 at level 1. Housing and upgrades increase capacity, but each faction has a hard maximum of 100. Queued recruits reserve slots. Losing or selling housing can block recruitment until capacity recovers; existing units remain.",
+      "Workers and military units, including workers inside buildings, share population capacity. The Town Hall starts with 12 slots; each House adds 8 at level 1. Housing and upgrades increase capacity, but each faction has a hard maximum of 100. Ordinary queued recruits reserve slots; worker conversions reuse existing slots and can finish at the cap. Losing or selling housing can block new recruitment until capacity recovers; existing units remain.",
     ],
     [
       "Recruitment and rally points",
@@ -76,15 +84,19 @@ window.RealmfrontHelp = (() => {
     ],
     [
       "Upgrade effects",
-      "Each unit level adds 25% of base maximum health, 20% base damage, and 5% base speed. Workers also gain 20% gathering output per level and healers restore 20% more health. Most buildings gain 25% base health per level; economic buildings gain 25% production and recruitment buildings gain 15% training speed. Capacity buildings gain half their base capacity per level. Watchtowers and Keeps instead gain 250 HP, 25 range, and increased damage and firing speed per level. Upgrade health increases preserve existing damage.",
+      "Each unit level adds 25% of base maximum health, 20% base damage, and 5% base speed. Workers also gain 20% gathering/staffing output per level and healers restore 20% more health. Most buildings gain 25% base health per level; economic buildings improve their staffed bonus by 25% and recruitment buildings gain 15% training speed. The unstaffed resource base stays 1/s. Capacity buildings gain half their base capacity per level. Watchtowers and Keeps instead gain 250 HP, 25 range, and increased damage and firing speed per level. Upgrade health increases preserve existing damage.",
     ],
     [
-      "Selling: S",
-      "Sell selected owned units or buildings for 50% of their purchase and upgrade costs, rounded down per resource. Queued recruits are fully refunded. Town Halls cannot be sold. Selling immediately removes units or building capacity. Double-click selects all living entities of the same type and kingdom across the map for batch actions.",
+      "Selection and selling: L",
+      "A single tap/click selects one unit. Double a fighting unit to select all deployed fighters of that kingdom; triple it to include deployed workers. Double a worker to select all deployed workers. Double a building selects matching buildings of its kingdom. Deselect or Esc clears the selection. Sell selected owned units or buildings with L or Sell for 50% of purchase and upgrade costs, rounded down per resource. Paid queue costs are refunded and occupants released. Town Halls cannot be sold. Selling on touch asks for confirmation.",
     ],
     [
       "Map and camera",
       "The island is 6,600 × 4,900. The surrounding sea is decorative: units, buildings, and rally destinations cannot enter it. M fits the whole island and sea border; H returns to a close view of your base. Click the minimap to reposition the camera. The whole battlefield is visible; there is no fog of war.",
+    ],
+    [
+      "Territory and expansion",
+      "Starting kingdoms are evenly spaced around an inset coast for the selected player count. Even-sized matches have mirrored opposite starts. Cliffs connect to the sea between neighbors, so coastal shortcuts lead inland around a pass. Larger matches add more ridges and deeper coastal barriers. Each kingdom starts with the same 12-tree grove and two gold deposits, and shares two frontier expansions with its neighbors. Each frontier has three rich gold deposits and an 18-tree forest; placement compares actual walking routes to keep both approaches similar. Three central crossings offer more neutral gold and woodland to conquer. Starts, expansion clearings, and approaches remain open.",
     ],
     [
       "Pause and speed",
@@ -99,7 +111,9 @@ window.RealmfrontHelp = (() => {
       "Box-select friendly units. Quick right-clicks tolerate a little dragging and issue orders instead. Hold and drag for a small selection, or drag a larger box.",
     ],
     ["Shift-click / Shift-right-drag", "Add units to your selection."],
-    ["Double-click", "Select all matching units/buildings of that kingdom."],
+    ["Double-click/tap", "Fighter: all fighters. Worker: all workers. Building: matching buildings of that kingdom."],
+    ["Triple-click/tap a fighter", "Select all deployed units of that kingdom, including workers."],
+    ["Hold, then drag on touch", "After 0.3 seconds, drag a marquee to select friendly units. Quick swipes pan instead."],
     [
       "Right-click",
       "Move, attack, gather, repair, or set a building rally point.",
@@ -110,27 +124,26 @@ window.RealmfrontHelp = (() => {
     ],
     [
       "Arrow keys",
-      "Pan the camera. A is reserved for attack-move and S for selling.",
+      "Pan the camera. A is reserved for attack-move, S for stop, and L for selling.",
     ],
     ["Scroll / M / H", "Zoom / full map / close view of your base."],
     [
-      "Q / A then click / Stop button",
+      "Q / A then click / S",
       "Select all soldiers / attack-move / stop and hold.",
     ],
-    ["U / S", "Upgrade / sell the selected owned entities."],
+    ["U / L", "Upgrade / sell the selected owned entities."],
     ["Ctrl+1–9 / 1–9", "Save / recall groups of living units."],
     [
       "Space / Esc",
-      "Pause or resume / cancel targeting or placement. Esc also closes this guide.",
+      "Pause or resume / deselect units and buildings and cancel targeting or placement. Esc closes this guide first when it is open.",
     ],
   ];
 
   function build() {
     const units = Object.entries(udefs)
       .map(([type, d]) => {
-        const producer = Object.entries(unitByBuilding).find(([, types]) =>
-          types.includes(type),
-        )?.[0];
+        const producer = Object.entries(unitByBuilding).filter(([, types]) => types.includes(type))
+          .map(([building]) => defs[building].name).join(", ");
         const stats = [
           stat("Cost", cost(d.cost)),
           stat("HP", d.hp),
@@ -153,7 +166,7 @@ window.RealmfrontHelp = (() => {
           d.name,
           d.desc,
           stats,
-          `Recruited at: ${defs[producer].name}. ${special}`,
+          `Recruited at: ${producer}. ${special}`,
         );
       })
       .join("");

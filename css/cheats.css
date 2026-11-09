@@ -7,14 +7,28 @@
 .logo:hover:not(:disabled) {
   background: transparent;
 }
-.touch-ui .logo {
-  display: block;
-  flex: 0 0 auto;
-  min-height: 44px;
-  margin-right: 4px;
-  padding: 2px 5px;
-  font-size: 12px;
-  letter-spacing: 0.3px;
+#realmfrontTitle {
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  filter: none;
+  transform: none;
+  transition: none;
+  animation: none;
+  cursor: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+#timeStat {
+  background: #111d20;
+  border-color: #3d5253;
+  box-shadow: none;
+  outline: none;
+  filter: none;
+  transform: none;
+  transition: none;
+  animation: none;
+  cursor: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 .cheat-panel {
   position: fixed;
@@ -93,9 +107,9 @@
   font-size: 12px;
 }
 .touch-ui .cheat-panel {
-  top: calc(env(safe-area-inset-top) + 58px);
+  top: calc(var(--game-header-bottom, 48px) + 6px);
   max-height: calc(
-    100dvh - 70px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+    100dvh - var(--game-header-bottom, 48px) - 18px - env(safe-area-inset-bottom)
   );
 }
 .touch-ui .cheat-panel button,

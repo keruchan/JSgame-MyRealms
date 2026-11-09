@@ -18,8 +18,9 @@ window.RealmfrontData = (() => {
       hp: 430,
       size: 67,
       color: "#acb96c",
-      desc: "Generates food automatically.",
-      rate: { food: 2.25 },
+      desc: "Produces 1 food/s. One worker can enter to add 1 food/s before bonuses.",
+      rate: { food: 1 },
+      workerSlots: 1,
     },
     lumber: {
       name: "Lumber Camp",
@@ -27,8 +28,9 @@ window.RealmfrontData = (() => {
       hp: 440,
       size: 63,
       color: "#aa8660",
-      desc: "Produces wood automatically.",
-      rate: { wood: 1.85 },
+      desc: "Produces 1 wood/s. One worker can enter to add 1 wood/s before bonuses.",
+      rate: { wood: 1 },
+      workerSlots: 1,
     },
     mine: {
       name: "Gold Mine",
@@ -36,8 +38,9 @@ window.RealmfrontData = (() => {
       hp: 500,
       size: 65,
       color: "#d1b36d",
-      desc: "Generates gold automatically.",
-      rate: { gold: 1.55 },
+      desc: "Produces 1 gold/s. One worker can enter to add 1 gold/s before bonuses.",
+      rate: { gold: 1 },
+      workerSlots: 1,
     },
     house: {
       name: "House",
@@ -45,7 +48,7 @@ window.RealmfrontData = (() => {
       hp: 360,
       size: 56,
       color: "#b99677",
-      desc: "Increases population capacity by 8.",
+      desc: "Increases population capacity by 8 and recruits workers.",
       cap: 8,
     },
     barracks: {
@@ -55,6 +58,7 @@ window.RealmfrontData = (() => {
       size: 81,
       color: "#b78678",
       desc: "Trains melee units: swordsmen, guards and spearmen.",
+      workerSlots: 5,
     },
     range: {
       name: "Archery Range",
@@ -63,6 +67,7 @@ window.RealmfrontData = (() => {
       size: 75,
       color: "#a3a4bd",
       desc: "Trains archers, crossbowmen and healers.",
+      workerSlots: 5,
     },
     stable: {
       name: "Stable",
@@ -71,6 +76,7 @@ window.RealmfrontData = (() => {
       size: 85,
       color: "#b19c7a",
       desc: "Trains cavalry and raiders.",
+      workerSlots: 5,
     },
     workshop: {
       name: "Siege Workshop",
@@ -79,6 +85,7 @@ window.RealmfrontData = (() => {
       size: 86,
       color: "#acaaa0",
       desc: "Trains siege engines.",
+      workerSlots: 5,
     },
     tower: {
       name: "Watchtower",
@@ -117,7 +124,7 @@ window.RealmfrontData = (() => {
       radius: 10,
       time: 6,
       kind: "worker",
-      desc: "Gathers wild resources and can defend itself.",
+      desc: "Gathers wild resources; repairs, staffs buildings, or retrains.",
     },
     sword: {
       name: "Swordsman",
@@ -242,6 +249,7 @@ window.RealmfrontData = (() => {
   // Recruitment options
   const unitByBuilding = {
     hall: ["worker"],
+    house: ["worker"],
     barracks: ["sword", "spear", "guard"],
     range: ["archer", "crossbow", "healer"],
     stable: ["cavalry", "raider"],
@@ -265,8 +273,21 @@ window.RealmfrontData = (() => {
       name: "Improved Tools",
       cost: { gold: 120, wood: 140 },
       time: 24,
-      desc: "+25% building and worker income per level.",
+      desc: "+25% worker gathering and staffed-building bonus per level.",
     },
   };
-  return { defs, udefs, unitByBuilding, research };
+  const briefs = {
+    building: {
+      farm: "1 food/s + worker", lumber: "1 wood/s + worker", mine: "1 gold/s + worker",
+      house: "+8 slots; workers", barracks: "Melee training", range: "Ranged training",
+      stable: "Cavalry training", workshop: "Siege training", tower: "Ranged defense", fortress: "Heavy defense",
+    },
+    unit: {
+      worker: "Gathers resources", sword: "Frontline fighter", spear: "Anti-cavalry", guard: "Armored defender",
+      archer: "Ranged support", crossbow: "Heavy ranged hits", healer: "Heals nearby allies",
+      cavalry: "Fast heavy cavalry", raider: "Fast worker hunter", catapult: "Siege artillery",
+    },
+    research: { weapons: "+20% military damage", armor: "+10% damage reduction", economy: "+25% worker output" },
+  };
+  return { defs, udefs, unitByBuilding, research, briefs };
 })();

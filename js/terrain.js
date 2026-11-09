@@ -4,7 +4,7 @@ window.RealmfrontTerrain = (() => {
   const world = window.RealmfrontWorld,
     clearance = 30;
   // Long, thin ridges shape routes without consuming large building areas.
-  // Fewer kingdoms get longer ranges; crowded matches get more, shorter ranges.
+  // Crowded matches add more ranges and deeper coast-connected frontiers.
   const tileSize = 96;
   const templates = [
     { name: "West Bluff", cx: 1488, cy: 2352, axis: "vertical", kind: "cliff" },
@@ -19,13 +19,18 @@ window.RealmfrontTerrain = (() => {
     { name: "North Steps", cx: 2880, cy: 864, axis: "horizontal", kind: "cliff" },
     { name: "East Spur", cx: 5376, cy: 2496, axis: "vertical", kind: "cliff" },
     { name: "South Shelf", cx: 2208, cy: 4224, axis: "horizontal", kind: "cliff" },
+    { name: "Valley Divide", cx: 2400, cy: 2016, axis: "vertical", kind: "pit" },
+    { name: "Copper Spine", cx: 4224, cy: 3360, axis: "vertical", kind: "cliff" },
+    { name: "Southern Rise", cx: 3552, cy: 4128, axis: "horizontal", kind: "cliff" },
+    { name: "Eastern Steps", cx: 5680, cy: 1728, axis: "horizontal", kind: "cliff" },
   ];
   let landforms = [], obstacles = [], nodes = [], links = [], playerCount = 0;
   function rectangles(form) {
     let row = 0;
+    const size = form.tileSize || tileSize;
     return form.rows.map(([inset, width, depth]) => {
-      const rectangle = { x: form.x + inset * tileSize, y: form.y + row * tileSize,
-        w: width * tileSize, h: depth * tileSize, kind: form.kind };
+      const rectangle = { x: form.x + inset * size, y: form.y + row * size,
+        w: width * size, h: depth * size, kind: form.kind };
       row += depth;
       return rectangle;
     });
@@ -34,19 +39,73 @@ window.RealmfrontTerrain = (() => {
     playerCount = Math.max(3, Math.min(10, Math.floor(count)));
     landforms = [];
     obstacles = [];
-    const amount = 9 + Math.round((playerCount - 3) * 3 / 7);
+    const amount = 9 + Math.ceil((playerCount - 3) * 4 / 7);
     const length = 17 - (playerCount - 3);
     const circleGap = (o, p) => Math.hypot(
       Math.max(o.x - p.x, 0, p.x - o.x - o.w),
       Math.max(o.y - p.y, 0, p.y - o.y - o.h));
+    // Bisect each neighboring pair at the actual shoreline. These frontiers
+    // touch the sea, so walking along the border cannot bypass them.
+    const shore = [...settlements].sort((a, b) => world.perimeterPosition(a) - world.perimeterPosition(b));
+    const span = 10 + Math.ceil((playerCount - 3) / 2), depth = span * tileSize;
+    for (let i = 0; i < shore.length; i++) {
+      const a = shore[i], b = shore[(i + 1) % shore.length];
+      let low = world.perimeterPosition(a), high = world.perimeterPosition(b);
+      if (high <= low) high += world.perimeterLength();
+      for (let step = 0; step < 40; step++) {
+        const mid = (low + high) / 2, p = world.perimeterPoint(mid);
+        if (Math.hypot(p.x - a.x, p.y - a.y) < Math.hypot(p.x - b.x, p.y - b.y)) low = mid;
+        else high = mid;
+      }
+      const anchor = world.perimeterPoint((low + high) / 2);
+      const edge = anchor.y === 0 ? "north" : anchor.x === world.width ? "east" : anchor.y === world.height ? "south" : "west";
+      const separation = Math.hypot(b.x - a.x, b.y - a.y);
+      let dx = -(b.y - a.y) / separation, dy = (b.x - a.x) / separation;
+      if (dx * (world.width / 2 - anchor.x) + dy * (world.height / 2 - anchor.y) < 0) { dx = -dx; dy = -dy; }
+      const length = depth / Math.max(Math.abs(dx), Math.abs(dy)), size = tileSize / (separation < 1600 ? 3 : 2);
+      const cells = new Map();
+      for (let distance = 0; distance <= length + 1; distance += size / 4) {
+        const x = Math.floor((anchor.x + dx * Math.min(length, distance)) / size);
+        const y = Math.floor((anchor.y + dy * Math.min(length, distance)) / size);
+        if (!cells.has(y)) cells.set(y, new Set());
+        cells.get(y).add(x);
+      }
+      const xs = [...cells.values()].flatMap((row) => [...row]), ys = [...cells.keys()];
+      const minX = Math.min(...xs), minY = Math.min(...ys), rows = [];
+      for (let y = minY; y <= Math.max(...ys); y++) {
+        const row = [...cells.get(y)], inset = Math.min(...row) - minX, width = Math.max(...row) - minX - inset + 1;
+        const previous = rows.at(-1);
+        if (previous && previous[0] === inset && previous[1] === width) previous[2]++;
+        else rows.push([inset, width, 1]);
+      }
+      const form = { name: `Frontier ${i + 1}`, role: "frontier", kind: "cliff", between: [a.id, b.id], edge, anchor,
+        gate: { x: anchor.x + dx * (length + 220), y: anchor.y + dy * (length + 220) },
+        forestAnchor: { x: anchor.x + dx * (length + 560), y: anchor.y + dy * (length + 560) },
+        resourceClearing: { x: anchor.x + dx * (length + 390), y: anchor.y + dy * (length + 390) },
+        axis: Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical", rows, tileSize: size, x: minX * size, y: minY * size };
+      const rects = rectangles(form);
+      if (!rects.every((o) => settlements.every((p) => circleGap(o, p) >= 650) && outposts.every((p) => circleGap(o, p) >= 300)))
+        throw new Error("Frontier overlaps a protected clearing: " + form.name);
+      landforms.push(form);
+      obstacles.push(...rects);
+    }
+    const sharedClearings = [
+      ...landforms.map((f) => ({ ...f.resourceClearing, radius: 400 })),
+      ...outposts.map((p) => ({ x: p.x - 240, y: p.y - 320, radius: 230 })),
+    ];
+    const approaches = landforms.flatMap((form) => form.between.map((id) => ({
+      from: settlements.find((p) => p.id === id), to: form.gate,
+    })));
     function fits(rects) {
       return rects.every((o) => world.contains(o.x, o.y, 96) &&
         world.contains(o.x + o.w, o.y + o.h, 96) &&
         settlements.every((p) => circleGap(o, p) >= 650) &&
         outposts.every((p) => circleGap(o, p) >= 300) &&
-        obstacles.every((other) => o.x >= other.x + other.w + 160 ||
-          o.x + o.w <= other.x - 160 || o.y >= other.y + other.h + 160 ||
-          o.y + o.h <= other.y - 160));
+        sharedClearings.every((p) => circleGap(o, p) >= p.radius) &&
+        approaches.every((path) => !intersects(path.from, path.to, o, 128)) &&
+        obstacles.every((other) => o.x >= other.x + other.w + 128 ||
+          o.x + o.w <= other.x - 128 || o.y >= other.y + other.h + 128 ||
+          o.y + o.h <= other.y - 128));
     }
     templates.slice(0, amount).forEach((template, index) => {
       const desired = Math.max(8, length - (template.kind === "pit" ? 3 : index % 3));
@@ -54,13 +113,13 @@ window.RealmfrontTerrain = (() => {
       for (let span = desired; span >= Math.max(7, desired - 4) && !placed; span--) {
         const part = Math.floor(span / 3);
         const rows = template.axis === "horizontal"
-          ? [[0, span - 2, 1], [1, span - 1, 1], [span - 3, 2, 1]]
-          : [[0, 2, part], [1, 2, part], [0, 2, span - part * 2]];
-        for (let radius = 0; radius <= 768 && !placed; radius += 96) {
+          ? [[0, span - 2, 1], [1, span - 1, 1]]
+          : [[0, 1, part], [1, 1, part], [0, 1, span - part * 2]];
+        for (let radius = 0; radius <= 3072 && !placed; radius += 96) {
           const samples = radius ? Math.ceil(radius / 30) : 1;
           for (let i = 0; i < samples; i++) {
             const angle = i / samples * Math.PI * 2;
-            const form = { name: template.name, kind: template.kind, axis: template.axis, rows,
+            const form = { name: template.name, role: "interior", kind: template.kind, axis: template.axis, rows,
               x: Math.round((template.cx + Math.cos(angle) * radius) / tileSize -
                 (template.axis === "horizontal" ? span : 3) / 2) * tileSize,
               y: Math.round((template.cy + Math.sin(angle) * radius) / tileSize -
@@ -74,7 +133,26 @@ window.RealmfrontTerrain = (() => {
           }
         }
       }
-      if (!placed) throw new Error("No safe terrain position for " + template.name);
+      if (!placed) {
+        // A slim spur fills remaining valleys in crowded matches without
+        // sacrificing the protected starting circles or army-width passages.
+        const candidates = [];
+        for (let y = 192; y < world.height - 192; y += 128)
+          for (let x = 192; x < world.width - 192; x += 128) candidates.push({ x, y });
+        candidates.sort((a, b) => Math.hypot(a.x - template.cx, a.y - template.cy) - Math.hypot(b.x - template.cx, b.y - template.cy));
+        for (let span = Math.max(6, desired - 4); span >= 3 && !placed; span--)
+          for (const p of candidates) {
+            for (const axis of [template.axis, template.axis === "horizontal" ? "vertical" : "horizontal"]) {
+              const form = { name: template.name, role: "interior", kind: template.kind, axis,
+                x: p.x, y: p.y, rows: axis === "horizontal" ? [[0, span, 1]] : [[0, 1, span]] };
+              const rects = rectangles(form);
+              if (!fits(rects)) continue;
+              landforms.push(form); obstacles.push(...rects); placed = true; break;
+            }
+            if (placed) break;
+          }
+      }
+      // Protected starts and shared expansion sites take priority over a hill.
     });
     rebuildNavigation();
   }

@@ -1,282 +1,103 @@
-.touch-controls {
-  display: none;
+
+/* Touch presentation is independent of the desktop panel layout. */
+.mobile-only, .touch-controls { display: none; }
+html { height: 100%; overscroll-behavior: none; }
+body { overscroll-behavior: none; }
+button, summary { touch-action: manipulation; }
+.modal { max-height: calc(100dvh - 30px); overflow-y: auto; overscroll-behavior: contain; }
+.landscape-prompt { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: #102125; color: #e6e8da; text-align: center; }
+.landscape-prompt.hidden { display: none; }
+.landscape-card { max-width: 420px; }
+.landscape-card h2 { font: 30px Georgia, serif; color: #efddac; }
+.landscape-card p { line-height: 1.7; }
+.rotate-device { display: block; color: #a2c7b0; font-size: 72px; }
+.landscape-card button { min-height: 48px; }
+
+.touch-ui .mobile-only { display: block; }
+.touch-ui .app { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); grid-template-rows: auto minmax(0, 1fr); }
+.touch-ui .top { min-height: 48px; padding: 2px 6px; gap: 4px 6px; flex-wrap: wrap; overflow: visible; position: relative; z-index: 12; }
+.touch-ui .stats { flex: 1 0 auto; min-width: max-content; flex-wrap: nowrap; gap: 4px; }
+.touch-ui .stat { min-width: 46px; min-height: 40px; padding: 3px 5px; }
+.touch-ui .stat small { font-size: 10px; letter-spacing: .3px; }
+.touch-ui .stat b { font-size: 14px; }
+.touch-ui .logo { display: block; flex: 0 0 auto; min-height: 44px; margin: 0; padding: 2px 4px; font-size: 12px; letter-spacing: .3px; }
+.touch-ui .touch-controls, .touch-ui .bottom { display: none; }
+.touch-ui .topright { display: flex; flex: 0 0 auto; max-width: 100%; gap: 4px; margin-left: auto; }
+.touch-ui #factionsAlive { display: block; position: absolute; z-index: 3; top: 5px; right: 5px; padding: 4px 8px; color: #f2ecd7; background: #10212561; border-color: #b2ccad70; font-size: 11px; line-height: 1.3; white-space: nowrap; text-shadow: 0 1px 2px #000; box-shadow: 0 1px 4px #0002; -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); pointer-events: none; }
+.touch-ui .topright button { flex: 0 0 auto; min-height: 44px; min-width: 44px; padding: 5px 7px; font-size: 12px; white-space: nowrap; }
+.touch-ui #fitMap { width: 76px; flex-basis: 76px; }
+
+/* Battlefield left; live selection details and roster on the right. */
+.touch-ui .main { grid-template-columns: minmax(0, 1fr) clamp(192px, 32vw, 320px); gap: 6px; padding: 5px; min-height: 0; }
+.touch-ui .worldwrap { border: 1px solid #536b5a; border-radius: 6px; }
+.touch-ui .worldwrap { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.touch-ui .side { position: static; display: flex; width: auto; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid #536b5a; border-radius: 6px; background: #192b29; }
+.touch-ui #touchClosePanel, .touch-ui #worldMapHeading, .touch-ui #touchInfo, .touch-ui #touchActionsToggle, .touch-ui .miniwrap { display: none; }
+.touch-ui #selectionHeading { padding: 5px 8px; font-size: 11px; }
+.touch-ui .panelpad { flex: 0 1 auto; max-height: 40%; min-height: 40px; padding: 6px 8px; overflow-y: auto; overscroll-behavior: contain; font-size: 12px; -webkit-overflow-scrolling: touch; }
+.touch-ui .panelpad h3 { font-size: 16px; margin: 0 0 4px; }
+.touch-ui .catalog-train { min-height: 38px; }
+.touch-ui .info { font-size: 12px; line-height: 1.4; }
+.touch-ui .selection-building-icon { width: 28px; height: 28px; }
+.touch-ui .sidebuttons { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding-bottom: 5px; }
+.touch-ui .sidebuttons button { min-height: 44px; font-size: 12px; padding: 4px; }
+.touch-ui .mobile-action-host { display: flex; flex: 1; min-height: 0; border-top: 1px solid #405951; }
+.touch-ui .mobile-action-host .section { display: flex; flex-direction: column; min-height: 0; width: 100%; padding: 4px; border: 0; overflow: hidden; }
+.touch-ui .sectiontitle { flex-shrink: 0; margin-bottom: 4px; font-size: 11px; }
+.touch-ui .buildgrid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: max-content; align-items: start; align-content: start; gap: 5px; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.touch-ui .action > * { flex-shrink: 0; }
+.touch-ui .action { min-width: 0; height: 72px; min-height: 72px; max-height: 72px; padding: 6px; overflow: hidden; }
+.touch-ui .action strong, .touch-ui .action span, .touch-ui .action .action-description { font-size: 12px; line-height: 1.3; }
+.touch-ui #minimap { width: 100%; height: auto; touch-action: none; }
+.touch-ui .minimap-hint { text-align: center; font-size: 11px; }
+
+.touch-ui .touch-deselect { position: absolute; z-index: 4; bottom: 6px; left: 6px; min-width: 88px; min-height: 38px; padding: 4px 8px; font-size: 12px; background: #21372fed; }
+.touch-ui .hudtip { top: 5px; left: 5px; max-width: calc(100% - 122px); padding: 4px 6px; border: none; font-size: 10px; background: #142923b8; }
+.touch-ui .world-status { display: none; }
+.touch-ui .toast { top: 48px; max-width: 95%; white-space: normal; text-align: center; font-size: 12px; padding: 7px; }
+.touch-ui .touch-placement { position: absolute; z-index: 4; bottom: 6px; right: 6px; display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; width: max-content; max-width: calc(100% - 112px); padding: 4px; background: #152925f5; border: 1px solid #8ca88b; border-radius: 6px; }
+.touch-placement span { flex: 0 1 auto; min-width: 0; max-width: 210px; text-align: left; font-size: 11px; }
+.touch-placement button { flex: 0 0 auto; min-height: 38px; min-width: 64px; padding: 3px 6px; font-size: 12px; }
+#touchConfirmBuild { background: #567443; border-color: #b5d59c; }
+.touch-ui .pause-state { font-size: 20px; padding: 12px 20px; }
+.touch-ui button, .touch-ui summary { -webkit-tap-highlight-color: transparent; }
+.touch-ui button:active:not(:disabled) { filter: brightness(1.2); }
+.touch-ui button:focus-visible { outline: 2px solid #f0d28d; outline-offset: -3px; }
+.touch-ui select, .touch-ui #cheatAmount { font-size: 16px; }
+.touch-ui .modal { padding: 16px; }
+.touch-ui .modal h1 { font-size: 32px; }
+.touch-ui .settings { margin: 12px 0; }
+.touch-ui .settings select, .touch-ui .modal button { min-height: 44px; }
+.touch-ui .featuregrid { grid-template-columns: 1fr 1fr; margin: 12px 0; }
+.touch-ui .help-dialog { height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
+.touch-ui .help-header { padding: 12px 14px; }
+.touch-ui .help-header h2 { font-size: 23px; }
+.touch-ui .help-header p { font-size: 10px; }
+.touch-ui .help-nav { padding: 5px 14px; }
+.touch-ui .help-nav button, .touch-ui #closeHelp { min-height: 44px; }
+.touch-ui .help-content { padding: 0 14px 16px; }
+.mobile-sell-dialog { width: min(410px, calc(100vw - 28px)); max-height: calc(100dvh - 24px); overflow-y: auto; background: #1c302c; color: #edf0df; border: 1px solid #8da58d; border-radius: 8px; padding: 18px; font: 14px/1.5 system-ui, sans-serif; }
+.mobile-sell-dialog::backdrop { background: #081312bb; }
+.mobile-sell-dialog h2 { margin: 0 0 10px; font-size: 21px; }
+.sell-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.sell-dialog-actions button { min-height: 44px; }
+@media (max-width: 700px) {
+  .touch-ui .top { gap: 4px; }
+  .touch-ui .logo { padding: 2px; font-size: 11px; letter-spacing: 0; }
+  .touch-ui .buildgrid { grid-template-columns: 1fr; }
 }
-html {
-  height: 100%;
-  overscroll-behavior: none;
-}
-body {
-  overscroll-behavior: none;
-}
-button {
-  touch-action: manipulation;
-}
-.modal {
-  max-height: calc(100dvh - 30px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.landscape-prompt {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: #102125;
-  color: #e6e8da;
-  text-align: center;
-}
-.landscape-prompt.hidden {
-  display: none;
-}
-.landscape-card {
-  max-width: 420px;
-}
-.landscape-card h2 {
-  font:
-    30px Georgia,
-    serif;
-  color: #efddac;
-}
-.landscape-card p {
-  line-height: 1.7;
-}
-.rotate-device {
-  display: block;
-  color: #a2c7b0;
-  font-size: 72px;
-}
-.landscape-card button {
-  min-height: 48px;
-}
-.touch-ui .app {
-  padding: env(safe-area-inset-top) env(safe-area-inset-right)
-    env(safe-area-inset-bottom) env(safe-area-inset-left);
-  grid-template-rows: auto auto minmax(0, 1fr) clamp(100px, 26dvh, 140px);
-}
-.touch-ui .top {
-  flex-wrap: nowrap;
-  gap: 6px;
-  min-height: 48px;
-  padding: 4px 6px;
-  overflow-x: auto;
-}
-.touch-ui .logo,
-.touch-ui #factionsAlive {
-  display: none;
-}
-.touch-ui .stats {
-  flex-wrap: nowrap;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.touch-ui .stat {
-  min-width: 43px;
-  padding: 3px 5px;
-}
-.touch-ui .stat small {
-  font-size: 8px;
-  letter-spacing: 0.3px;
-}
-.touch-ui .stat b {
-  font-size: 12px;
-}
-.touch-ui .topright {
-  gap: 4px;
-  flex-shrink: 0;
-}
-.touch-ui .topright button {
-  min-height: 44px;
-  min-width: 44px;
-  font-size: 11px;
-  padding: 5px 7px;
-}
-.touch-ui .touch-controls {
-  display: flex;
-  gap: 5px;
-  overflow-x: auto;
-  padding: 4px 6px;
-  border-bottom: 1px solid #405951;
-  background: #142523;
-  scrollbar-width: thin;
-}
-.touch-controls button {
-  flex: 0 0 auto;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 6px 10px;
-  font-size: 12px;
-}
-.touch-controls button[aria-pressed="true"] {
-  background: #62784e;
-  border-color: #bdd296;
-}
-.touch-ui .main {
-  grid-template-columns: minmax(0, 1fr) clamp(175px, 25vw, 235px);
-}
-.touch-ui .side {
-  overflow: hidden;
-}
-.touch-ui .side > .sidehead:first-child,
-.touch-ui .miniwrap {
-  display: none;
-}
-.touch-ui.map-open .side > .sidehead:first-child,
-.touch-ui.map-open .miniwrap {
-  display: block;
-}
-.touch-ui.map-open .side > .sidehead:nth-child(3),
-.touch-ui.map-open .panelpad {
-  display: none;
-}
-.touch-ui .sidehead {
-  padding: 5px 8px;
-  font-size: 12px;
-}
-.touch-ui .panelpad {
-  padding: 6px 8px;
-  overscroll-behavior: contain;
-}
-.touch-ui .panelpad h3 {
-  font-size: 16px;
-}
-.touch-ui .sidebuttons button {
-  min-height: 44px;
-  font-size: 11px;
-  padding: 5px;
-}
-.touch-ui .info {
-  font-size: 11px;
-}
-.touch-ui .bottom {
-  display: block;
-  overflow: hidden;
-}
-.touch-ui .bottom > .section:first-child,
-.touch-ui .bottom > .section:last-child {
-  display: none;
-}
-.touch-ui .bottom > .section:nth-child(2) {
-  height: 100%;
-  padding: 5px 6px;
-  overflow: hidden;
-  border: none;
-  display: flex;
-  flex-direction: column;
-}
-.touch-ui .sectiontitle {
-  font-size: 9px;
-  margin-bottom: 4px;
-}
-.touch-ui .buildgrid {
-  display: flex;
-  gap: 5px;
-  overflow-x: auto;
-  min-height: 0;
-  flex: 1;
-  overscroll-behavior: contain;
-}
-.touch-ui .action {
-  flex: 0 0 145px;
-  min-height: 44px;
-  padding: 6px;
-  overflow-y: auto;
-}
-.touch-ui .action strong {
-  font-size: 11px;
-}
-.touch-ui .action span,
-.touch-ui .action .action-description {
-  font-size: 10px;
-}
-.touch-ui .hudtip {
-  top: 5px;
-  left: 5px;
-  max-width: calc(100% - 10px);
-  font-size: 10px;
-  padding: 4px 6px;
-}
-.touch-ui .world-status {
-  bottom: 5px;
-  left: 5px;
-  max-width: calc(100% - 10px);
-  padding: 4px 6px;
-}
-.touch-ui #objectives {
-  display: none;
-}
-.touch-ui #commandState {
-  font-size: 9px;
-  margin: 0;
-}
-.touch-ui .toast {
-  top: 40px;
-  font-size: 11px;
-  padding: 6px 10px;
-}
-.touch-ui .pause-state {
-  font-size: 20px;
-  padding: 12px 20px;
-}
-.touch-ui .modal {
-  padding: 16px;
-}
-.touch-ui .modal h1 {
-  font-size: 32px;
-}
-.touch-ui .settings {
-  margin: 12px 0;
-}
-.touch-ui .settings select {
-  min-height: 44px;
-}
-.touch-ui .modal button {
-  min-height: 44px;
-}
-.touch-ui .featuregrid {
-  grid-template-columns: 1fr 1fr;
-  margin: 12px 0;
-}
-.touch-ui .help-dialog {
-  height: calc(100dvh - 16px);
-  max-height: calc(100dvh - 16px);
-}
-.touch-ui .help-header {
-  padding: 12px 14px;
-}
-.touch-ui .help-header h2 {
-  font-size: 23px;
-}
-.touch-ui .help-header p {
-  font-size: 10px;
-}
-.touch-ui .help-nav {
-  padding: 5px 14px;
-}
-.touch-ui .help-nav button {
-  min-height: 44px;
-}
-.touch-ui #closeHelp {
-  min-height: 44px;
-}
-.touch-ui .help-content {
-  padding: 0 14px 16px;
-}
-@media (max-height: 350px) and (orientation: landscape) {
-  .touch-ui .app {
-    grid-template-rows: 44px 48px minmax(0, 1fr) 90px;
-  }
-}
-@media (max-height: 500px) and (orientation: landscape) {
-  .touch-ui .modal .featuregrid {
-    display: none;
-  }
-  .touch-ui .modal p {
-    margin: 8px 0;
-    line-height: 1.45;
-  }
-  .touch-ui .start-hint {
-    font-size: 10px;
-  }
+@media (max-height: 500px) and (orientation: landscape) { .touch-ui .modal .featuregrid { display: none; } .touch-ui .modal p { margin: 8px 0; line-height: 1.45; } .touch-ui .start-hint { font-size: 10px; } }
+
+.touch-ui .rail-commands { display: none; padding: 4px; gap: 4px; border-bottom: 1px solid #405951; }
+.touch-ui.has-troops .rail-commands { display: flex; }
+.rail-commands button { flex: 1; min-width: 0; min-height: 44px; padding: 4px; font-size: 12px; }
+.touch-ui.has-troops:not(.rail-build):not(.map-open) .panelpad { flex: 1; max-height: none; }
+.touch-ui.has-troops:not(.rail-build):not(.map-open) .mobile-action-host { display: none; }
+.touch-ui.rail-roster .panelpad, .touch-ui.rail-roster #selectionHeading { display: none; }
+.touch-ui.no-selection:not(.rail-info) .panelpad, .touch-ui.no-selection:not(.rail-info) #selectionHeading { display: none; }
+.touch-ui #touchActionsToggle { display: none; }
+.touch-ui .mobile-action-host #actionTitle { display: block; }
+.touch-ui.catalog-mode .panelpad { flex: 0 1 auto; max-height: 48%; min-height: 0; padding: 4px; }
+@media (max-height: 420px) {
+  .touch-ui.catalog-mode #selectionHeading { display: none; }
 }
